@@ -4,6 +4,7 @@ import RegisterPage from './pages/RegisterPage';
 import DashboardPage from './pages/DashboardPage';
 import DisputeDemoPage from './pages/DisputeDemoPage';
 import AttackDemoPage from './pages/AttackDemoPage';
+import PhishingCloneDemoPage from './pages/PhishingCloneDemoPage';
 
 function App() {
   return (
@@ -15,6 +16,7 @@ function App() {
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/demo/dispute" element={<DisputeDemoPage />} />
         <Route path="/demo/attack" element={<AttackDemoPage />} />
+        <Route path="/demo/phishing-clone" element={<PhishingCloneDemoPage />} />
       </Routes>
     </BrowserRouter>
   );
