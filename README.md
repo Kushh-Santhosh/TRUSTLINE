@@ -3,7 +3,7 @@
 **High-assurance authentication and approval platform** — phishing-resistant passkey login, cryptographic quorum approvals, and a tamper-evident hash-chained audit ledger built for a 24-hour hackathon.
 
 [![Tests](https://img.shields.io/badge/tests-75%20passing-brightgreen)](backend/src/tests)
-[![Stack](https://img.shields.io/badge/stack-Node%20%7C%20React%20%7C%20Postgres%20%7C%20Redis-blue)](docker-compose.yml)
+[![Stack](https://img.shields.io/badge/stack-Node%20%7C%20React%20%7C%20Postgres-blue)](docker-compose.yml)
 
 ---
 
@@ -15,7 +15,7 @@ Most auth demos stop at "a user logged in." TrustLine answers three harder quest
 |---|---|
 | **Attacker intercepts credentials** | WebAuthn passkeys — credentials never leave the device, nothing to steal |
 | **Infrastructure fails at 3 a.m.** | Quorum policy: approval still resolves via escalation chain even if one approver is unavailable |
-| **"He said / she said" dispute** | Every vote is Ed25519-signed over `{action, timestamp, approver}` — the signed receipt is the proof |
+| **"He said / she said" dispute** | Every vote is Ed25519-signed over `{requestId, decision, timestamp}` — the signed receipt is the proof |
 
 ---
 
@@ -25,21 +25,21 @@ Most auth demos stop at "a user logged in." TrustLine answers three harder quest
 ┌─ Browser ──────────────────────────────────────────────────────────┐
 │  React + Vite SPA (port 5173)                                      │
 │                                                                    │
-│  LoginPage  RegisterPage  Dashboard  AttackDemoPage                │
-│  DisputeDemoPage  PhishingCloneDemoPage                            │
+│  /login  /register  /dashboard  /demo/attack                       │
+│  /demo/dispute  /demo/phishing-clone                               │
 └───────────────────────┬────────────────────────────────────────────┘
                         │ HTTPS / JSON (VITE_API_URL)
 ┌─ Express API ─────────▼────────────────────────────────────────────┐
 │  Node 20 / TypeScript (port 4000)                                  │
 │                                                                    │
 │  ┌─ Auth ─────────────────────────────────────────────────────┐   │
-│  │  WebAuthn (passkeys)  →  requireAuth (JWT RS256)           │   │
-│  │  TOTP step-up  ←  Risk engine (new device / geo / time)   │   │
-│  │  Refresh-token rotation + reuse detection                  │   │
+│  │  WebAuthn (passkeys)  →  requireAuth (JWT HS256)           │   │
+│  │  TOTP step-up  ←  Risk engine (new device / time anomaly)  │   │
+│  │  Refresh-token rotation + reuse detection (PostgreSQL)     │   │
 │  └────────────────────────────────────────────────────────────┘   │
 │                                                                    │
 │  ┌─ Approval engine ──────────────────────────────────────────┐   │
-│  │  Policy CRUD  →  quorum evaluation (N-of-M, unanimous …)  │   │
+│  │  Policy CRUD  →  quorum evaluation (N-of-M, single_senior) │   │
 │  │  Ed25519 vote signing (per-approver keypair in DB)         │   │
 │  │  Delegation  +  break-glass escalation                    │   │
 │  └────────────────────────────────────────────────────────────┘   │
@@ -47,24 +47,25 @@ Most auth demos stop at "a user logged in." TrustLine answers three harder quest
 │  ┌─ Audit ledger ─────────────────────────────────────────────┐   │
 │  │  Hash-chained audit entries (SHA-256 prev_hash → this_hash)│   │
 │  │  Cryptographic receipt: signed votes + full chain          │   │
-│  │  Verify-chain script detects any tampering                 │   │
+│  │  verify-chain script detects any tampering                 │   │
 │  └────────────────────────────────────────────────────────────┘   │
-└─────────────────────┬──────────────────┬───────────────────────────┘
-                      │                  │
-              ┌───────▼──────┐   ┌───────▼───────┐
-              │  PostgreSQL  │   │     Redis      │
-              │  (port 5432) │   │  (port 6379)   │
-              │  Users,keys  │   │  Refresh-token │
-              │  policies,   │   │  family store  │
-              │  votes,audit │   └───────────────┘
-              └──────────────┘
+└─────────────────────┬──────────────────────────────────────────────┘
+                      │
+              ┌───────▼──────────────────────┐
+              │  PostgreSQL  (port 5432)      │
+              │  Users, credentials, refresh  │
+              │  tokens, policies, votes,     │
+              │  audit log, signing keys      │
+              └──────────────────────────────┘
 ```
+
+> **Note on Redis:** Redis is included in `docker-compose.yml` for future use (e.g. distributed rate limiting). It is not currently used by the application server.
 
 ### Key design decisions
 
 - **Non-repudiation via Ed25519** — every vote is signed server-side with the approver's stored keypair (AES-256-GCM encrypted at rest, key derived from `JWT_SECRET`). A dispute requires producing the signed receipt; no receipt = no approval.
 - **Risk-based step-up** — login risk is scored on new device / unusual hour / geo anomaly. Score ≥ medium forces TOTP before a session is issued.
-- **Refresh-token family invalidation** — token reuse detection: presenting an already-rotated token kills the entire family, not just the one session.
+- **Refresh-token family invalidation** — token reuse detection: presenting an already-rotated token kills the entire family, not just the one session. All tokens are stored hashed (SHA-256) in PostgreSQL.
 - **Hash-chained ledger** — each audit entry stores `this_hash = SHA-256(prev_hash + entry)`. The `verify-chain` script detects any row-level tampering.
 
 ---
@@ -73,11 +74,12 @@ Most auth demos stop at "a user logged in." TrustLine answers three harder quest
 
 | Scenario | Route | What it shows |
 |---|---|---|
-| **Normal login** | `/login` | Passkey + optional TOTP step-up |
-| **Dispute resolution** | `/demo/dispute` | Pulls a signed receipt; verify signatures live |
-| **MFA fatigue attack** | `/demo/mfa-fatigue` | Rate-limiter blocks after 3 step-up attempts in 60 s |
-| **Replay attack** | `/demo/replay` | Reused authentication artifact is detected and rejected |
-| **Phishing-clone** | `/demo/phishing` | Side-by-side comparison of real vs. phishing login |
+| **Normal login** | `/login` | Passkey + optional TOTP step-up after risk scoring |
+| **Register passkey** | `/register` | WebAuthn enrollment + TOTP setup flow |
+| **Dashboard** | `/dashboard` | Active sessions, pending approvals, audit log, demo request creator |
+| **Dispute resolution** | `/demo/dispute` | Pulls a signed receipt; verify Ed25519 signatures + hash chain live |
+| **MFA fatigue / step-up attack** | `/demo/attack` | Rate-limiter blocks after 3 step-up attempts in 60 s |
+| **Phishing clone** | `/demo/phishing-clone` | Side-by-side comparison of real vs. phishing login page |
 
 ---
 
@@ -100,7 +102,7 @@ cd trustline
 
 # 2. Create local environment file
 cp backend/.env.example .env
-# Edit .env — set JWT_SECRET and JWT_REFRESH_SECRET to unique random values:
+# Edit .env — set JWT_SECRET to a unique random value:
 #   node -e "const c=require('crypto'); console.log('JWT_SECRET='+c.randomBytes(64).toString('hex'))"
 
 # 3. Start the full stack (builds images, migrates, seeds, then prints URLs)
@@ -164,9 +166,8 @@ All variables are documented in [`backend/.env.example`](backend/.env.example).
 | Variable | Required | Default | Description |
 |---|---|---|---|
 | `DATABASE_URL` | ✅ | — | PostgreSQL connection string |
-| `REDIS_URL` | ✅ | — | Redis connection string |
-| `JWT_SECRET` | ✅ | — | Signs access tokens + encrypts private keys |
-| `JWT_REFRESH_SECRET` | ✅ | — | Signs refresh tokens |
+| `JWT_SECRET` | ✅ | — | Signs access tokens + encrypts approver private keys at rest |
+| `JWT_REFRESH_SECRET` | ☐ | — | Reserved; not currently read by the server |
 | `PORT` | ☐ | `4000` | Backend listen port |
 | `FRONTEND_ORIGIN` | ☐ | `http://localhost:5173` | CORS allow-origin |
 | `WEBAUTHN_RP_ID` | ☐ | `localhost` | Must match the frontend domain |
@@ -174,33 +175,51 @@ All variables are documented in [`backend/.env.example`](backend/.env.example).
 
 **Frontend** only needs `VITE_API_URL` (default: `http://localhost:4000`), baked into the bundle at build time.
 
-> **Security note:** generate secrets with:
+> **Security note:** generate a strong secret with:
 > ```bash
-> node -e "const c=require('crypto'); \
->   console.log('JWT_SECRET='+c.randomBytes(64).toString('hex')); \
->   console.log('JWT_REFRESH_SECRET='+c.randomBytes(64).toString('hex'));"
+> node -e "console.log('JWT_SECRET='+require('crypto').randomBytes(64).toString('hex'))"
 > ```
 
 ---
 
 ## API reference
 
+### Auth
+
 | Method | Path | Auth | Description |
 |---|---|---|---|
-| `GET` | `/health` | — | Liveness check → `{ status: "ok" }` |
+| `GET` | `/health` | — | Liveness check → `{ status: "ok", db: "ok" }` |
 | `POST` | `/api/auth/register/options` | — | Begin WebAuthn registration |
-| `POST` | `/api/auth/register/verify` | — | Complete WebAuthn registration |
+| `POST` | `/api/auth/register/verify` | — | Complete WebAuthn registration → `{ verified, userId }` |
+| `POST` | `/api/auth/totp/setup` | — | Generate TOTP secret + QR URI for enrollment |
+| `POST` | `/api/auth/totp/verify` | — | Confirm TOTP code to complete enrollment |
 | `POST` | `/api/auth/login/options` | — | Begin WebAuthn login |
-| `POST` | `/api/auth/login/verify` | — | Complete login; may return step-up token |
-| `POST` | `/api/auth/login/step-up` | — | Verify TOTP; issues full session |
-| `POST` | `/api/auth/refresh` | — | Rotate refresh token |
-| `POST` | `/api/auth/logout` | ✅ | Revoke session |
-| `GET` | `/api/approval/policies` | ✅ | List approval policies |
-| `POST` | `/api/approval/policies` | ✅ | Create policy |
-| `POST` | `/api/approval/requests` | ✅ | Submit approval request |
-| `POST` | `/api/approval/requests/:id/votes` | ✅ | Cast signed vote |
+| `POST` | `/api/auth/login/verify` | — | Complete login; may return `{ stepUpRequired, pendingToken }` |
+| `POST` | `/api/auth/login/step-up` | — | Verify TOTP; issues full session tokens |
+| `POST` | `/api/auth/refresh` | — | Rotate refresh token → new access + refresh token pair |
+| `GET` | `/api/auth/sessions` | ✅ | List active sessions for the current user |
+| `DELETE` | `/api/auth/sessions/:familyId` | ✅ | Revoke a specific session family |
+| `GET` | `/api/auth/audit` | ✅ | Recent audit log entries for the current user |
+
+### Approvals
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| `GET` | `/api/approval/policies` | ✅ | List all approval policies |
+| `POST` | `/api/approval/policies` | ✅ | Create a policy |
+| `GET` | `/api/approval/policies/:id` | ✅ | Get a single policy |
+| `POST` | `/api/approval/requests` | ✅ | Submit an approval request |
 | `GET` | `/api/approval/requests` | ✅ | List resolved requests (dispute feed) |
-| `GET` | `/api/ledger/receipt/:id` | ✅ | Fetch signed receipt + audit chain |
+| `GET` | `/api/approval/requests/pending` | ✅ | List all pending requests |
+| `POST` | `/api/approval/requests/:id/votes` | ✅ | Cast a signed vote (approve / deny) |
+| `POST` | `/api/approval/requests/:id/break-glass` | ✅ | Force-approve with mandatory post-hoc audit |
+| `POST` | `/api/approval/delegations` | ✅ | Create a vote delegation |
+
+### Ledger
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| `GET` | `/api/ledger/receipt/:id` | ✅ | Fetch cryptographic receipt: signed votes + audit chain |
 
 ---
 
@@ -229,11 +248,11 @@ npm run verify-chain
 
 | Suite | File | Tests | What it covers |
 |---|---|---|---|
-| Quorum evaluation | `quorum.service.test.ts` | 19 | N-of-M, unanimous, rejection, edge cases |
-| Signing / verification | `signing.service.test.ts` | 18 | Ed25519 sign, verify, tamper detection |
-| Auth integration | `auth.integration.test.ts` | 12 | Full login flow via real Express routes |
-| Rate-limit smoke | `rateLimit.test.ts` | 10 | Step-up rate limiter, 429 at attempt 4 |
-| Approval integration | `approval.integration.test.ts` | 16 | Policy, votes, quorum, receipt, signatures |
+| Quorum evaluation | `src/services/quorum.service.test.ts` | 19 | N-of-M, single_senior, rejection, edge cases |
+| Signing / verification | `src/services/signing.service.test.ts` | 18 | Ed25519 sign, verify, tamper detection |
+| Auth integration | `src/tests/auth.integration.test.ts` | 12 | Full login flow via real Express routes (services mocked) |
+| Rate-limit smoke | `src/tests/rateLimit.test.ts` | 10 | Step-up rate limiter, 429 at attempt 4 |
+| Approval integration | `src/tests/approval.integration.test.ts` | 16 | Policy, votes, quorum, receipt, signatures |
 | **Total** | | **75** | |
 
 ---
@@ -269,41 +288,58 @@ docker compose down --volumes
 
 ```
 trustline/
-├── start-demo.sh              # one-command demo launcher (M10.3)
+├── start-demo.sh              # one-command demo launcher
 ├── docker-compose.yml         # postgres · redis · backend · frontend
 ├── backend/
 │   ├── Dockerfile             # multi-stage Node 20 build
-│   ├── migrations/            # node-pg-migrate SQL migrations (M0.x–M7.x)
+│   ├── migrations/            # node-pg-migrate migrations (11 migrations)
+│   ├── vitest.config.ts
 │   └── src/
-│       ├── routes/            # Express route handlers
+│       ├── app.ts             # Express app setup
+│       ├── index.ts           # server entry point
+│       ├── routes/
 │       │   ├── auth.routes.ts
 │       │   ├── approval.routes.ts
 │       │   ├── ledger.routes.ts
 │       │   └── risk.routes.ts
-│       ├── services/          # business logic
+│       ├── services/
 │       │   ├── webauthn.service.ts
 │       │   ├── session.service.ts
+│       │   ├── totp.service.ts
 │       │   ├── risk.service.ts
 │       │   ├── policy.service.ts
 │       │   ├── request.service.ts
+│       │   ├── quorum.service.ts
 │       │   ├── signing.service.ts
 │       │   ├── keys.service.ts
 │       │   ├── audit.service.ts
-│       │   ├── totp.service.ts
-│       │   └── quorum.service.ts
+│       │   ├── delegation.service.ts
+│       │   ├── quorum.service.test.ts
+│       │   └── signing.service.test.ts
+│       ├── middleware/
+│       │   └── requireAuth.ts
+│       ├── jobs/
+│       │   └── escalation.job.ts
+│       ├── lib/
+│       │   ├── config.ts
+│       │   └── logger.ts
+│       ├── db/
+│       │   └── pool.ts
 │       ├── scripts/
-│       │   ├── seed.ts        # demo data (alice, bob, carol + policy)
-│       │   ├── smokeTest.ts   # post-deploy health verification (M10.4)
-│       │   ├── loadTest.ts    # rate-limit load test (M9.5)
-│       │   └── verifyChain.ts # audit chain integrity check
+│       │   ├── seed.ts
+│       │   ├── smokeTest.ts
+│       │   ├── loadTest.ts
+│       │   └── verifyChain.ts
 │       └── tests/
 │           ├── auth.integration.test.ts
 │           ├── approval.integration.test.ts
 │           └── rateLimit.test.ts
 └── frontend/
     ├── Dockerfile             # Vite build → nginx:alpine
-    ├── nginx.conf             # SPA routing
+    ├── nginx.conf             # SPA routing + API proxy
+    ├── tailwind.config.js
     └── src/
+        ├── App.tsx
         ├── pages/
         │   ├── LoginPage.tsx
         │   ├── RegisterPage.tsx
@@ -312,7 +348,8 @@ trustline/
         │   ├── DisputeDemoPage.tsx
         │   └── PhishingCloneDemoPage.tsx
         └── lib/
-            └── apiClient.ts
+            ├── apiClient.ts
+            └── auth.ts
 ```
 
 ---
@@ -324,7 +361,7 @@ trustline/
 | Phishing resistance | WebAuthn origin-binding — credentials only work on the registered domain |
 | Credential theft protection | Private keys never leave the authenticator device |
 | MFA fatigue mitigation | Step-up rate-limit: 429 after 3 attempts per user in 60 s |
-| Replay protection | Refresh-token family invalidation; demo replay detection |
+| Session reuse detection | Refresh-token family invalidation — presenting a rotated token revokes the whole family |
 | Non-repudiation | Ed25519 vote signatures over `{requestId, decision, timestamp}` |
 | Audit integrity | SHA-256 hash chain; `verify-chain` script detects any tampering |
 | Secret at rest | Approver private keys encrypted AES-256-GCM, key derived from `JWT_SECRET` |

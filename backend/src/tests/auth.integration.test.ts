@@ -51,7 +51,7 @@ vi.mock('@simplewebauthn/server', () => ({
 
 vi.mock('../services/webauthn.service', () => ({
   generateRegistrationOptionsForUser: vi.fn().mockResolvedValue({ challenge: 'cmVnLWNoYWxsZW5nZQ', rp: { id: 'localhost' } }),
-  verifyRegistration:                 vi.fn().mockResolvedValue(undefined),
+  verifyRegistration:                 vi.fn().mockResolvedValue({ userId: 'test-user-uuid-001' }),
   generateLoginOptionsForUser:        vi.fn().mockResolvedValue({ challenge: 'YXV0aC1jaGFsbGVuZ2U', rpId: 'localhost', allowCredentials: [{ id: 'dGVzdC1jcmVkLWlk' }] }),
   verifyLogin:                        vi.fn().mockResolvedValue('test-user-uuid-001'),
   challengeStore:                     new Map(),
