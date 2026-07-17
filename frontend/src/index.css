@@ -1,12 +1,12 @@
-/* ── Google Fonts — Inter ──────────────────────────────────────────────── */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+/* ── Google Fonts — Inter (300–800) ─────────────────────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
 
 /* ── Tailwind directives ───────────────────────────────────────────────── */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* ── Base layer overrides ──────────────────────────────────────────────── */
+/* ── Base layer ────────────────────────────────────────────────────────── */
 @layer base {
   *,
   *::before,
@@ -19,15 +19,17 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
+    scroll-behavior: smooth;
   }
 
   body {
     margin: 0;
     font-family: 'Inter', system-ui, sans-serif;
-    font-size: 1rem;
-    line-height: 1.625;
-    color: #e8edf5;            /* ink.primary */
-    background-color: #0b0f1a; /* surface.base */
+    font-size: 0.875rem;    /* 14px */
+    font-weight: 400;
+    line-height: 1.5;
+    color: #0F172A;
+    background-color: #F8F9FB;
   }
 
   #root {
@@ -35,37 +37,270 @@
     width: 100%;
   }
 
+  /* ── Headings ── */
   h1, h2, h3, h4, h5, h6 {
     font-family: 'Inter', system-ui, sans-serif;
     font-weight: 600;
-    color: #e8edf5;
+    color: #0F172A;
     line-height: 1.25;
-    letter-spacing: -0.02em;
+    letter-spacing: -0.015em;
     margin: 0;
   }
 
+  h1 { font-size: 1.5rem;   letter-spacing: -0.02em; }
+  h2 { font-size: 1.25rem;  letter-spacing: -0.015em; }
+  h3 { font-size: 1.125rem; letter-spacing: -0.01em; }
+  h4 { font-size: 1rem; }
+  h5 { font-size: 0.875rem; }
+  h6 { font-size: 0.75rem;  letter-spacing: 0.02em; text-transform: uppercase; }
+
+  /* ── Body copy ── */
   p {
     margin: 0;
-    color: #8a9bb8; /* ink.secondary */
+    color: #475569;
   }
 
+  /* ── Links ── */
   a {
-    color: #00c896; /* accent */
+    color: #2563EB;
     text-decoration: none;
+    transition: color 150ms ease;
   }
-
   a:hover {
-    color: #00e5ab; /* accent.hover */
+    color: #1D4ED8;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    text-decoration-thickness: 1px;
   }
 
+  /* ── Selection ── */
   ::selection {
-    background-color: rgba(0, 200, 150, 0.25);
-    color: #e8edf5;
+    background-color: rgba(37, 99, 235, 0.14);
+    color: #0F172A;
   }
 
-  /* Scrollbar styling */
-  ::-webkit-scrollbar { width: 6px; height: 6px; }
-  ::-webkit-scrollbar-track { background: #0b0f1a; }
-  ::-webkit-scrollbar-thumb { background: #2a3550; border-radius: 3px; }
-  ::-webkit-scrollbar-thumb:hover { background: #3d4f6e; }
+  /* ── Focus ring — keyboard only ── */
+  :focus-visible {
+    outline: 2px solid #2563EB;
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+
+  /* ── Scrollbar — subtle ── */
+  ::-webkit-scrollbar        { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track  { background: transparent; }
+  ::-webkit-scrollbar-thumb  { background: #C8CDD6; border-radius: 9999px; }
+  ::-webkit-scrollbar-thumb:hover { background: #94A3B8; }
+}
+
+/* ── Components ────────────────────────────────────────────────────────── */
+@layer components {
+
+  /* ┌─────────────────────────────────────────────────────────────────────┐
+     │  BUTTONS                                                            │
+     └─────────────────────────────────────────────────────────────────────┘ */
+
+  /* Base button — applied to every .btn-* */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2
+           min-h-10 font-medium rounded-lg select-none cursor-pointer
+           transition-all duration-150
+           focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2
+           disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none;
+  }
+
+  /* Size variants */
+  .btn-xs { @apply px-2.5 py-1    text-xs  rounded-md; }
+  .btn-sm { @apply px-3   py-1.5  text-xs; }
+  .btn-md { @apply px-4   py-2.5  text-sm; }
+  .btn-lg { @apply px-5   py-3    text-base; }
+
+  /* Primary — near-black, brand voice */
+  .btn-primary {
+    @apply btn btn-md
+           bg-ink-primary text-ink-inverted
+           hover:bg-slate-800 active:bg-slate-950 active:scale-[0.98]
+           focus-visible:ring-ink-primary/30;
+  }
+
+  /* Accent — blue CTA */
+  .btn-accent {
+    @apply btn btn-md
+           bg-accent text-ink-inverted
+           hover:bg-accent-hover active:bg-accent-active active:scale-[0.98]
+           shadow-sm hover:shadow-md
+           focus-visible:ring-accent/40;
+  }
+
+  /* Secondary — surface + border */
+  .btn-secondary {
+    @apply btn btn-md
+           bg-surface-elevated border border-border text-ink-primary
+           hover:bg-surface-subtle hover:border-border-strong active:scale-[0.98]
+           shadow-xs
+           focus-visible:ring-ink-primary/20;
+  }
+
+  /* Ghost — transparent, text only */
+  .btn-ghost {
+    @apply btn btn-md
+           text-ink-secondary
+           hover:bg-surface-subtle hover:text-ink-primary active:scale-[0.98]
+           focus-visible:ring-ink-primary/20;
+  }
+
+  /* Danger — destructive action */
+  .btn-danger {
+    @apply btn btn-md
+           bg-danger text-ink-inverted
+           hover:bg-danger-hover active:scale-[0.98]
+           shadow-sm
+           focus-visible:ring-danger/40;
+  }
+
+  /* Outline-danger — softer destructive */
+  .btn-outline-danger {
+    @apply btn btn-md
+           border border-danger-border bg-danger-muted text-danger
+           hover:bg-danger/[0.12] active:scale-[0.98]
+           focus-visible:ring-danger/30;
+  }
+
+  /* ┌─────────────────────────────────────────────────────────────────────┐
+     │  INPUTS                                                             │
+     └─────────────────────────────────────────────────────────────────────┘ */
+
+  .input {
+    @apply w-full rounded-lg border border-border bg-surface-elevated
+           px-3.5 py-2.5 text-sm text-ink-primary
+           placeholder:text-ink-muted placeholder:font-normal
+           outline-none
+           transition-all duration-150
+           shadow-inner
+           hover:border-border-strong
+           focus:border-accent focus:ring-2 focus:ring-accent-ring focus:shadow-accent
+           disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-surface-subtle
+           read-only:bg-surface-subtle read-only:cursor-default;
+  }
+
+  /* Smaller variant */
+  .input-sm {
+    @apply input px-3 py-1.5 text-xs rounded-md;
+  }
+
+  /* Error state */
+  .input-error {
+    @apply border-danger/40 focus:border-danger focus:ring-danger/20 focus:shadow-danger;
+  }
+
+  /* Label paired with .input */
+  .label {
+    @apply block text-sm font-medium text-ink-primary mb-1.5;
+  }
+
+  /* Field wrapper — vertical stack */
+  .field {
+    @apply flex flex-col gap-1.5;
+  }
+
+  /* Helper / error text under an input */
+  .field-hint  { @apply text-xs text-ink-muted mt-0.5; }
+  .field-error { @apply text-xs text-danger mt-0.5; }
+
+  /* ┌─────────────────────────────────────────────────────────────────────┐
+     │  CARDS                                                              │
+     └─────────────────────────────────────────────────────────────────────┘ */
+
+  .card {
+    @apply rounded-xl border border-border bg-surface-elevated
+           shadow-xs overflow-hidden;
+  }
+
+  /* Hoverable card */
+  .card-interactive {
+    @apply card cursor-pointer
+           transition-all duration-200
+           hover:shadow-md hover:border-border-strong hover:-translate-y-px;
+  }
+
+  /* Card sections */
+  .card-header {
+    @apply px-5 py-4 border-b border-border bg-surface-subtle/60 sm:px-6;
+  }
+  .card-body   { @apply p-5 sm:p-6; }
+  .card-footer {
+    @apply px-5 py-4 border-t border-border bg-surface-subtle/40 sm:px-6;
+  }
+
+  /* Inline alert banners inside cards / forms */
+  .alert {
+    @apply rounded-lg px-4 py-3 text-sm border;
+  }
+  .alert-error   {
+    @apply alert border-danger-border bg-danger-muted text-danger;
+  }
+  .alert-warning {
+    @apply alert border-warning-border bg-warning-muted text-warning;
+  }
+  .alert-success {
+    @apply alert border-success-border bg-success-muted text-success;
+  }
+
+  /* Badge / pill */
+  .badge {
+    @apply inline-flex items-center gap-1 rounded-full px-2 py-0.5
+           text-2xs font-semibold tabular-nums;
+  }
+  .badge-accent  { @apply badge bg-accent-muted   text-accent; }
+  .badge-danger  { @apply badge bg-danger-muted   text-danger; }
+  .badge-warning { @apply badge bg-warning-muted  text-warning; }
+  .badge-success { @apply badge bg-success-muted  text-success; }
+  .badge-neutral { @apply badge bg-surface-subtle text-ink-secondary border border-border; }
+}
+
+/* ── Utilities ─────────────────────────────────────────────────────────── */
+@layer utilities {
+  /* Monospace text — code, hashes, OTP */
+  .mono {
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    font-size: 0.8125rem;
+    letter-spacing: 0.01em;
+  }
+
+  /* Long hash display — truncate-safe */
+  .hash-truncate {
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    font-size: 0.75rem;
+    word-break: break-all;
+    color: #475569;
+  }
+
+  /* Visually subtle section label */
+  .eyebrow {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #94A3B8;
+  }
+
+  /* Smooth underline link */
+  .link {
+    @apply text-accent hover:text-accent-hover font-medium
+           underline underline-offset-2 decoration-accent/40
+           hover:decoration-accent/80 transition-all duration-150;
+  }
+
+  /* Gradient text */
+  .text-gradient {
+    @apply bg-gradient-to-r from-accent to-blue-400 bg-clip-text text-transparent;
+  }
+
+  /* Pulse dot — status indicator */
+  .dot-online  { @apply h-2 w-2 rounded-full bg-success animate-pulse; }
+  .dot-offline { @apply h-2 w-2 rounded-full bg-ink-muted; }
+  .dot-warning { @apply h-2 w-2 rounded-full bg-warning animate-pulse; }
+
+  /* No-underline link (overrides base a hover) */
+  .no-underline { text-decoration: none !important; }
 }

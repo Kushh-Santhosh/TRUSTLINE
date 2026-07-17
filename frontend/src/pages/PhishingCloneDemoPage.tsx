@@ -65,17 +65,17 @@ export default function PhishingCloneDemoPage() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-[#0f0f14] px-4 py-12">
+    <div className="flex min-h-screen flex-col items-center justify-center bg-[#0f0f14] px-4 py-8 sm:py-12">
 
       {/* ── Demo banner (always visible, clearly non-deceptive) ── */}
-      <div className="w-full max-w-lg mb-4">
-        <div className="rounded-lg border-2 border-dashed border-danger/60 bg-danger/8 px-5 py-3 flex items-center gap-3">
-          <span className="text-lg">⚠️</span>
+      <div className="mb-5 w-full max-w-lg">
+        <div id="phish-demo-notice" className="flex items-start gap-3 rounded-xl border border-danger/60 bg-danger/8 px-5 py-4">
+          <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-danger/60 text-sm font-semibold text-danger" aria-hidden="true">!</span>
           <div>
             <p className="text-sm font-bold text-danger uppercase tracking-wider">
               DEMO: Simulated Phishing Clone
             </p>
-            <p className="text-xs text-ink-secondary mt-0.5">
+            <p className="mt-1 text-xs leading-5 text-[#b5bbc8]">
               This page intentionally mimics a login screen to demonstrate passkey phishing-resistance.
               It <strong>cannot</strong> produce a valid authenticated session.
             </p>
@@ -90,20 +90,21 @@ export default function PhishingCloneDemoPage() {
           <span className="text-2xl font-heading font-semibold tracking-tight text-[#a78bfa]">
             Trust<span className="text-[#f87171]">Iine</span>   {/* lowercase i ← a classic phishing tell */}
           </span>
-          <p className="mt-1 text-xs text-[#6b7280]">
+          <p className="mt-1 font-mono text-xs text-[#858b99]">
             secure-trustline-login.example.com  {/* fake domain shown as UX cue */}
           </p>
         </div>
 
         {/* Clone card — dark but subtly different palette */}
-        <div className="rounded-xl bg-[#1a1a24] border border-[#2d2d3d] shadow-xl p-8">
-          <h1 className="text-xl font-semibold text-white mb-6">Sign in</h1>
+        <div className="rounded-xl border border-[#343445] bg-[#1a1a24] p-6 shadow-xl sm:p-8">
+          <h1 className="mb-1 text-xl font-semibold text-white">Sign in</h1>
+          <p className="mb-6 text-xs text-[#858b99]">Simulated lookalike interface</p>
 
           {/* ── Idle / Attempt phases ── */}
           {(phase === 'idle' || phase === 'attempting') && (
-            <form onSubmit={handlePhishAttempt} className="space-y-5">
+            <form onSubmit={handlePhishAttempt} aria-describedby="phish-demo-notice" className="space-y-5">
               <div>
-                <label htmlFor="phish-email" className="block text-sm text-[#9ca3af] mb-1.5">
+                <label htmlFor="phish-email" className="mb-1.5 block text-sm text-[#c4c8d2]">
                   Email address
                 </label>
                 <input
@@ -118,7 +119,7 @@ export default function PhishingCloneDemoPage() {
                     w-full rounded-md bg-[#111118] border border-[#2d2d3d]
                     px-3.5 py-2.5 text-sm text-white placeholder-[#4b5563]
                     outline-none focus:border-[#a78bfa] focus:ring-1 focus:ring-[#a78bfa]
-                    transition-colors disabled:opacity-50
+                    transition-colors disabled:cursor-not-allowed disabled:opacity-50
                   "
                 />
               </div>
@@ -130,7 +131,7 @@ export default function PhishingCloneDemoPage() {
                 className="
                   w-full rounded-md bg-[#a78bfa] text-black font-semibold
                   text-sm px-4 py-2.5 hover:bg-[#9061f9]
-                  transition-colors disabled:opacity-60 disabled:cursor-not-allowed
+                  transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#a78bfa]/50 disabled:opacity-60 disabled:cursor-not-allowed
                 "
               >
                 {phase === 'attempting' ? 'Attempting…' : 'Sign in with passkey'}
@@ -142,9 +143,9 @@ export default function PhishingCloneDemoPage() {
           {phase === 'failed' && (
             <div className="space-y-4">
               {/* Browser error box */}
-              <div className="rounded-md bg-[#2d1515] border border-[#f87171]/40 px-4 py-4">
-                <p className="text-sm font-semibold text-[#f87171] mb-1">
-                  ✗ Passkey authentication failed
+              <div role="alert" className="rounded-lg border border-[#f87171]/40 bg-[#2d1515] px-4 py-4">
+                <p className="mb-1 text-sm font-semibold text-[#f87171]">
+                  Passkey authentication was not completed
                 </p>
                 <p className="text-xs text-[#9ca3af] font-mono break-words">
                   {errorMsg || 'The operation either timed out or was not allowed.'}
@@ -152,13 +153,13 @@ export default function PhishingCloneDemoPage() {
               </div>
 
               {/* Explanation panel */}
-              <div className="rounded-md bg-[#0f1f14] border border-[#4ade80]/30 px-4 py-4">
-                <p className="text-sm font-semibold text-[#4ade80] mb-2">
-                  🛡 Why this phishing page failed:
+              <div className="rounded-lg border border-[#4ade80]/30 bg-[#0f1f14] px-4 py-4">
+                <p className="mb-2 text-sm font-semibold text-[#4ade80]">
+                  Why the simulated clone cannot authenticate:
                 </p>
                 <ul className="text-xs text-[#9ca3af] space-y-2 list-none">
                   <li className="flex gap-2">
-                    <span className="text-[#4ade80] shrink-0">•</span>
+                    <span className="shrink-0 text-[#4ade80]" aria-hidden="true">•</span>
                     <span>
                       <strong className="text-white">Passkeys are origin-bound.</strong>{' '}
                       A credential registered on <code className="bg-[#111118] px-1 rounded">localhost:5173</code> cannot
@@ -166,7 +167,7 @@ export default function PhishingCloneDemoPage() {
                     </span>
                   </li>
                   <li className="flex gap-2">
-                    <span className="text-[#4ade80] shrink-0">•</span>
+                    <span className="shrink-0 text-[#4ade80]" aria-hidden="true">•</span>
                     <span>
                       <strong className="text-white">No phishable secret.</strong>{' '}
                       Unlike passwords, passkey authentication never transmits a secret the
@@ -174,7 +175,7 @@ export default function PhishingCloneDemoPage() {
                     </span>
                   </li>
                   <li className="flex gap-2">
-                    <span className="text-[#4ade80] shrink-0">•</span>
+                    <span className="shrink-0 text-[#4ade80]" aria-hidden="true">•</span>
                     <span>
                       <strong className="text-white">Clone detection.</strong>{' '}
                       Even if a user lands on this page, the browser refuses to produce an assertion —
@@ -188,7 +189,7 @@ export default function PhishingCloneDemoPage() {
                 type="button"
                 id="phish-reset-btn"
                 onClick={reset}
-                className="w-full rounded-md border border-[#2d2d3d] text-sm px-4 py-2 text-[#9ca3af] hover:bg-[#1a1a24] transition-colors"
+                className="w-full rounded-md border border-[#3c3c4d] px-4 py-2 text-sm text-[#c4c8d2] transition-colors hover:bg-[#252532] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#a78bfa]/50"
               >
                 Try again
               </button>
@@ -197,7 +198,7 @@ export default function PhishingCloneDemoPage() {
         </div>
 
         {/* Link back to real login */}
-        <p className="mt-5 text-center text-xs text-[#4b5563]">
+        <p className="mt-5 text-center text-xs text-[#858b99]">
           Go to the{' '}
           <a href="/login" className="text-[#a78bfa] hover:underline">
             real TrustLine login ↗

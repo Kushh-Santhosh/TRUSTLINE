@@ -50,7 +50,7 @@ interface Receipt {
 
 type Phase = 'pick' | 'claim' | 'reveal';
 
-// ── helpers ───────────────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────
 
 function shortId(id: string) {
   return id.slice(0, 8) + '…';
@@ -61,7 +61,58 @@ function shortHash(h: string | null) {
   return h.slice(0, 12) + '…' + h.slice(-6);
 }
 
+function StatusPill({ status }: { status: string }) {
+  const map: Record<string, string> = {
+    approved: 'bg-success-muted text-success border-success-border',
+    denied:   'bg-danger-muted text-danger border-danger-border',
+    pending:  'bg-warning-muted text-warning border-warning-border',
+  };
+  return (
+    <span className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-2xs font-semibold ${map[status] ?? 'bg-surface-subtle text-ink-muted border-border'}`}>
+      <span className="h-1.5 w-1.5 rounded-full bg-current" aria-hidden="true" />
+      {status.charAt(0).toUpperCase() + status.slice(1)}
+    </span>
+  );
+}
 
+function CopyButton({ value, label }: { value: string; label: string }) {
+  const [copied, setCopied] = useState(false);
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    } catch {
+      // The displayed value remains available for manual copying when clipboard access is unavailable.
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={copy}
+      className="shrink-0 rounded-md border border-border bg-surface-elevated px-2 py-1 text-2xs font-medium text-ink-secondary transition-colors hover:bg-surface-subtle hover:text-ink-primary"
+      aria-label={`Copy ${label}`}
+    >
+      {copied ? 'Copied' : 'Copy'}
+    </button>
+  );
+}
+
+function CryptoValue({ label, value, compact = false }: { label: string; value: string; compact?: boolean }) {
+  return (
+    <div className="min-w-0">
+      <div className="mb-1.5 flex items-center justify-between gap-3">
+        <p className="text-2xs font-medium uppercase tracking-wider text-ink-muted">{label}</p>
+        <CopyButton value={value} label={label} />
+      </div>
+      <code className={`block rounded-md border border-border bg-surface-subtle px-3 py-2 font-mono text-xs leading-5 text-ink-secondary ${compact ? 'break-all' : 'max-h-36 overflow-auto whitespace-pre-wrap break-all'}`}>
+        {compact ? shortHash(value) : value}
+      </code>
+    </div>
+  );
+}
 
 // ── Component ─────────────────────────────────────────────────────────────
 
@@ -140,18 +191,16 @@ export default function DisputeDemoPage() {
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-surface-base px-4 py-12">
-      <div className="mx-auto max-w-3xl space-y-8">
+    <div className="min-h-screen bg-surface-base px-4 py-8 sm:py-10">
+      <div className="mx-auto max-w-5xl space-y-8">
 
-        {/* Header */}
-        <div>
-          <span className="text-xs font-semibold uppercase tracking-widest text-accent">
+        {/* Page header */}
+        <div className="border-b border-border pb-5">
+          <span className="inline-flex items-center rounded-full border border-accent-border bg-accent-muted px-2 py-0.5 text-2xs font-semibold text-accent">
             Demo Feature
           </span>
-          <h1 className="mt-2 text-3xl font-heading font-bold text-ink-primary">
-            Dispute Resolution
-          </h1>
-          <p className="mt-2 text-sm text-ink-secondary max-w-xl">
+          <h1 className="mt-3 text-2xl font-semibold tracking-tight text-ink-primary">Dispute Resolution</h1>
+          <p className="mt-1 max-w-2xl text-sm leading-6 text-ink-secondary">
             An approver claims they never approved a request. TrustLine reveals the
             cryptographic receipt — signed evidence that cannot be repudiated.
           </p>
@@ -159,66 +208,69 @@ export default function DisputeDemoPage() {
 
         {/* ── Phase 1: Pick a request ── */}
         {phase === 'pick' && (
-          <div className="rounded-xl border border-border bg-surface-elevated shadow-lg overflow-hidden">
-            <div className="border-b border-border px-6 py-4">
-              <h2 className="font-heading font-semibold text-ink-primary">
-                Select a resolved approval request
-              </h2>
-              <p className="text-sm text-ink-secondary mt-1">
+          <div className="overflow-hidden rounded-xl border border-border bg-surface-elevated shadow-xs">
+            <div className="border-b border-border px-5 py-4 sm:px-6">
+              <h2 className="text-base font-semibold text-ink-primary">Select a resolved request</h2>
+              <p className="text-sm text-ink-secondary mt-0.5">
                 Choose any resolved request to demonstrate dispute resolution.
               </p>
             </div>
 
-            <div className="px-6 py-5">
+            <div className="px-5 py-5 sm:px-6">
               {loading && (
-                <p className="text-sm text-ink-muted">Loading requests…</p>
+                <div className="divide-y divide-border overflow-hidden rounded-lg border border-border">
+                  {[1, 2, 3].map(i => (
+                    <div key={i} className="flex items-center gap-3 px-4 py-4">
+                      <div className="h-5 w-16 animate-pulse rounded-full bg-surface-subtle" />
+                      <div className="min-w-0 flex-1 space-y-2"><div className="h-3 w-32 animate-pulse rounded bg-surface-subtle" /><div className="h-2.5 w-44 animate-pulse rounded bg-surface-subtle" /></div>
+                    </div>
+                  ))}
+                </div>
               )}
               {loadErr && (
-                <div className="rounded-md bg-danger/10 border border-danger/30 px-4 py-3 text-sm text-danger">
-                  {loadErr}
+                <div className="rounded-lg border border-danger-border bg-danger-muted px-4 py-3 text-sm text-danger">
+                  <p className="font-medium">Unable to load resolved requests</p>
+                  <p className="mt-0.5 text-xs">{loadErr}
                   {loadErr.includes('401') && (
-                    <span> — <a href="/login" className="underline">Sign in</a> to continue.</span>
+                    <span> — <a href="/login" className="underline underline-offset-2">Sign in</a> to continue.</span>
                   )}
+                  </p>
                 </div>
               )}
               {!loading && !loadErr && requests.length === 0 && (
-                <p className="text-sm text-ink-muted">
-                  No resolved requests found. Submit and approve a request first.
-                </p>
+                <div className="flex flex-col items-center px-6 py-14 text-center">
+                  <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-lg border border-border bg-surface-subtle text-ink-muted">
+                    <svg className="h-5 w-5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="3" y="2" width="10" height="12" rx="1.5" /><path d="M5.5 5.5h5M5.5 8h5M5.5 10.5h3" strokeLinecap="round" /></svg>
+                  </div>
+                  <p className="text-sm font-medium text-ink-primary">No resolved requests</p>
+                  <p className="mt-1 text-xs leading-5 text-ink-muted">
+                    Create and approve a request from the Dashboard first.
+                  </p>
+                  <a href="/dashboard" className="mt-3 text-xs text-accent hover:underline">
+                    Go to Dashboard →
+                  </a>
+                </div>
               )}
               {!loading && requests.length > 0 && (
-                <div className="divide-y divide-border rounded-lg border border-border overflow-hidden">
+                <div className="divide-y divide-border overflow-hidden rounded-lg border border-border">
                   {requests.map((r) => (
                     <button
                       key={r.id}
                       id={`pick-request-${r.id}`}
                       type="button"
                       onClick={() => pickRequest(r)}
-                      className="
-                        w-full text-left px-4 py-4 flex items-center gap-4
-                        hover:bg-surface-subtle transition-colors
-                      "
+                      className="flex w-full items-center gap-4 px-4 py-4 text-left transition-colors duration-150 hover:bg-surface-subtle"
                     >
-                      <span
-                        className={`shrink-0 rounded px-2 py-0.5 text-xs font-semibold uppercase ${
-                          r.status === 'approved'
-                            ? 'bg-success/15 text-success'
-                            : r.status === 'denied'
-                              ? 'bg-danger/15 text-danger'
-                              : 'bg-border text-ink-muted'
-                        }`}
-                      >
-                        {r.status}
-                      </span>
+                      <StatusPill status={r.status} />
                       <span className="flex-1 min-w-0">
-                        <span className="block text-sm font-medium text-ink-primary font-mono">
+                        <span className="block font-mono text-sm font-medium text-ink-primary">
                           {shortId(r.id)}
                         </span>
-                        <span className="block text-xs text-ink-muted mt-0.5">
+                        <span className="mt-0.5 block text-xs text-ink-muted">
                           {new Date(r.created_at).toLocaleString()}
                         </span>
                       </span>
-                      <span className="text-ink-muted text-xs shrink-0">Select →</span>
+                      <span className="shrink-0 text-xs font-medium text-accent">View receipt →</span>
                     </button>
                   ))}
                 </div>
@@ -229,54 +281,53 @@ export default function DisputeDemoPage() {
 
         {/* ── Phase 2: Approver claims denial ── */}
         {phase === 'claim' && selected && (
-          <div className="space-y-6">
+          <div className="space-y-4">
             {/* Claim card */}
-            <div className="rounded-xl border border-danger/40 bg-danger/5 shadow-lg overflow-hidden">
-              <div className="px-6 py-4 border-b border-danger/20">
-                <h2 className="font-heading font-semibold text-danger flex items-center gap-2">
-                  <span>⚠</span> Approver's Claim
-                </h2>
+            <div className="overflow-hidden rounded-xl border border-danger-border bg-danger-muted">
+              <div className="flex items-center gap-2 border-b border-danger-border px-5 py-4 sm:px-6">
+                <span className="text-danger text-sm" aria-hidden="true">!</span>
+                <h2 className="text-base font-semibold text-danger">Approver's Claim</h2>
               </div>
-              <div className="px-6 py-6 flex flex-col gap-4">
+              <div className="px-5 py-5 sm:px-6">
                 <div className="flex items-start gap-4">
-                  <div className="w-10 h-10 rounded-full bg-danger/20 flex items-center justify-center text-lg shrink-0">
-                    👤
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-danger-border bg-surface-elevated text-danger">
+                    <svg className="h-4 w-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="8" cy="5" r="2.5" /><path d="M3.5 14c.4-2.5 2-3.75 4.5-3.75S12.1 11.5 12.5 14" strokeLinecap="round" /></svg>
                   </div>
-                  <blockquote className="italic text-ink-secondary text-sm leading-relaxed border-l-2 border-danger/40 pl-4">
-                    "I never approved request <code className="font-mono text-xs bg-surface-subtle px-1 rounded">{shortId(selected.id)}</code>.
-                    I have no record of this. Someone must have acted on my behalf without my consent."
+                  <blockquote className="italic text-ink-secondary text-sm leading-relaxed border-l-2 border-danger/30 pl-4">
+                    "I never approved request{' '}
+                    <code className="not-italic font-mono text-xs bg-surface-elevated px-1.5 py-0.5 rounded border border-border">
+                      {shortId(selected.id)}
+                    </code>
+                    . I have no record of this. Someone must have acted on my behalf."
                   </blockquote>
                 </div>
-                <p className="text-xs text-ink-muted">
-                  — Approver ID: <span className="font-mono">{shortId(selected.requester_id)}</span>
+                <p className="text-xs text-ink-muted mt-3">
+                  — Requester ID: <span className="font-mono">{shortId(selected.requester_id)}</span>
                 </p>
               </div>
             </div>
 
-            {/* Action */}
             {receiptErr && (
-              <div className="rounded-md bg-danger/10 border border-danger/30 px-4 py-3 text-sm text-danger">
-                {receiptErr}
+              <div className="rounded-lg border border-danger-border bg-danger-muted px-4 py-3 text-sm text-danger">
+                <p className="font-medium">Unable to retrieve receipt</p>
+                <p className="mt-0.5 text-xs">{receiptErr}</p>
               </div>
             )}
-            <div className="flex gap-3">
+
+            <div className="flex flex-wrap gap-3">
               <button
                 id="btn-reveal-receipt"
                 type="button"
                 disabled={receiptLoading}
                 onClick={revealReceipt}
-                className="
-                  rounded-md bg-accent text-surface-base font-semibold text-sm
-                  px-6 py-2.5 hover:bg-accent-hover transition-colors shadow-accent
-                  disabled:opacity-50 disabled:cursor-not-allowed
-                "
+                className="rounded-lg bg-ink-primary px-4 py-2.5 text-sm font-medium text-ink-inverted transition-colors duration-150 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {receiptLoading ? 'Fetching receipt…' : '🔍 Reveal cryptographic receipt'}
+                {receiptLoading ? 'Loading receipt…' : 'Reveal cryptographic receipt'}
               </button>
               <button
                 type="button"
                 onClick={reset}
-                className="rounded-md border border-border text-sm px-5 py-2.5 text-ink-secondary hover:bg-surface-subtle transition-colors"
+                className="rounded-lg border border-border text-sm font-medium px-5 py-2.5 text-ink-secondary hover:bg-surface-subtle transition-colors duration-150"
               >
                 ← Back
               </button>
@@ -286,72 +337,50 @@ export default function DisputeDemoPage() {
 
         {/* ── Phase 3: Receipt revealed ── */}
         {phase === 'reveal' && receipt && (
-          <div className="space-y-6">
+          <div className="space-y-5">
 
-            {/* Verdict banner */}
-            <div className="rounded-xl bg-success/10 border border-success/30 px-6 py-4 flex items-start gap-3">
-              <span className="text-2xl">✅</span>
+            {/* Receipt status: the backend returns evidence but no independent verification result. */}
+            <div className="flex items-start gap-3 rounded-xl border border-accent-border bg-accent-muted px-5 py-4">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-accent-border bg-surface-elevated text-accent">
+                <svg className="h-4 w-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M4 2.5h6l2 2V13a.5.5 0 0 1-.5.5h-7A.5.5 0 0 1 4 13V2.5Z" /><path d="M6 8h4M6 10.5h4" strokeLinecap="round" /></svg>
+              </div>
               <div>
-                <p className="font-semibold text-success">Claim refuted by cryptographic evidence</p>
-                <p className="text-sm text-ink-secondary mt-1">
-                  The receipt below is tamper-evident. Each vote carries an Ed25519 signature
-                  verifiable against the approver's stored public key, and every event is
-                  hash-chained in the audit log.
+                <p className="text-sm font-semibold text-ink-primary">Cryptographic receipt retrieved</p>
+                <p className="mt-1 text-sm leading-6 text-ink-secondary">
+                  This receipt contains the returned signed votes and hash-linked audit records. No independent signature or chain verification result was returned by the API.
                 </p>
               </div>
             </div>
 
-            {/* Votes / signatures */}
-            <div className="rounded-xl border border-border bg-surface-elevated shadow-lg overflow-hidden">
-              <div className="border-b border-border px-6 py-4">
-                <h2 className="font-heading font-semibold text-ink-primary">
-                  Approval Votes &amp; Signatures
-                </h2>
-                <p className="text-xs text-ink-muted mt-1">
-                  {receipt.votes.length} vote{receipt.votes.length !== 1 ? 's' : ''} recorded
-                </p>
+            {/* Votes & signatures */}
+            <div className="overflow-hidden rounded-xl border border-border bg-surface-elevated shadow-xs">
+              <div className="flex items-center justify-between border-b border-border px-5 py-4 sm:px-6">
+                <h2 className="text-base font-semibold text-ink-primary">Approval Votes & Signatures</h2>
+                <span className="text-xs text-ink-muted">
+                  {receipt.votes.length} vote{receipt.votes.length !== 1 ? 's' : ''}
+                </span>
               </div>
 
               {receipt.votes.length === 0 ? (
-                <p className="px-6 py-5 text-sm text-ink-muted">No votes found for this request.</p>
+                <p className="px-5 py-12 text-center text-sm text-ink-muted sm:px-6">No votes were returned for this request.</p>
               ) : (
                 <div className="divide-y divide-border">
                   {receipt.votes.map((v) => (
-                    <div key={v.id} className="px-6 py-5 space-y-3">
-                      <div className="flex items-center gap-3">
-                        <span
-                          className={`rounded px-2 py-0.5 text-xs font-semibold uppercase ${
-                            v.decision === 'approve'
-                              ? 'bg-success/15 text-success'
-                              : 'bg-danger/15 text-danger'
-                          }`}
-                        >
-                          {v.decision}
+                    <div key={v.id} className="space-y-4 px-5 py-5 sm:px-6">
+                      <div className="flex flex-wrap items-center gap-3">
+                        <StatusPill status={v.decision === 'approve' ? 'approved' : 'denied'} />
+                        <span className="font-mono text-sm text-ink-secondary">
+                          {shortId(v.approver_id)}
                         </span>
-                        <span className="text-sm text-ink-secondary font-mono">
-                          Approver: {shortId(v.approver_id)}
-                        </span>
-                        <span className="text-xs text-ink-muted ml-auto">
+                        <span className="ml-auto font-mono text-xs text-ink-muted">
                           {new Date(v.created_at).toLocaleString()}
                         </span>
                       </div>
 
-                      {/* Signature */}
-                      <div>
-                        <p className="text-xs font-semibold text-ink-muted mb-1">Ed25519 Signature</p>
-                        <pre className="rounded bg-surface-subtle border border-border px-3 py-2 text-xs font-mono text-ink-secondary overflow-x-auto whitespace-pre-wrap break-all">
-                          {v.signature || '(none)'}
-                        </pre>
-                      </div>
+                      <CryptoValue label="Ed25519 signature" value={v.signature || '(none)'} />
 
-                      {/* Public key */}
                       {v.public_key && (
-                        <div>
-                          <p className="text-xs font-semibold text-ink-muted mb-1">Approver Public Key (PEM)</p>
-                          <pre className="rounded bg-surface-subtle border border-border px-3 py-2 text-xs font-mono text-ink-secondary overflow-x-auto whitespace-pre-wrap">
-                            {v.public_key}
-                          </pre>
-                        </div>
+                        <CryptoValue label="Approver public key (PEM)" value={v.public_key} />
                       )}
                     </div>
                   ))}
@@ -359,52 +388,43 @@ export default function DisputeDemoPage() {
               )}
             </div>
 
-            {/* Audit chain entries */}
-            <div className="rounded-xl border border-border bg-surface-elevated shadow-lg overflow-hidden">
-              <div className="border-b border-border px-6 py-4">
-                <h2 className="font-heading font-semibold text-ink-primary">
-                  Audit Chain Evidence
-                </h2>
-                <p className="text-xs text-ink-muted mt-1">
-                  {receipt.audit_entries.length} related audit entr{receipt.audit_entries.length !== 1 ? 'ies' : 'y'} — hash-chained and tamper-evident
-                </p>
+            {/* Audit chain */}
+            <div className="overflow-hidden rounded-xl border border-border bg-surface-elevated shadow-xs">
+              <div className="flex items-center justify-between border-b border-border px-5 py-4 sm:px-6">
+                <h2 className="text-base font-semibold text-ink-primary">Audit Chain Evidence</h2>
+                <span className="text-xs text-ink-muted">
+                  {receipt.audit_entries.length} entr{receipt.audit_entries.length !== 1 ? 'ies' : 'y'}
+                </span>
               </div>
 
               {receipt.audit_entries.length === 0 ? (
-                <p className="px-6 py-5 text-sm text-ink-muted">No audit entries for this request.</p>
+                <p className="px-5 py-12 text-center text-sm text-ink-muted sm:px-6">No audit entries were returned for this request.</p>
               ) : (
                 <div className="divide-y divide-border">
                   {receipt.audit_entries.map((e) => (
-                    <div key={String(e.id)} className="px-6 py-4 space-y-2">
-                      <div className="flex items-center gap-3">
-                        <span className="rounded bg-accent/10 text-accent text-xs font-semibold px-2 py-0.5 font-mono">
+                    <div key={String(e.id)} className="space-y-4 px-5 py-5 sm:px-6">
+                      <div className="flex flex-wrap items-center gap-3">
+                        <span className="rounded-md border border-accent-border bg-accent-muted px-2 py-0.5 font-mono text-2xs font-medium text-accent">
                           {e.entry_type}
                         </span>
-                        <span className="text-xs text-ink-muted">
+                        <span className="font-mono text-xs text-ink-muted">
                           {new Date(e.created_at).toLocaleString()}
                         </span>
+                        <span className="ml-auto font-mono text-2xs text-ink-muted">Entry {shortId(String(e.id))}</span>
                       </div>
 
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs font-mono">
-                        <div>
-                          <p className="text-ink-muted mb-0.5">prev_hash</p>
-                          <p className="text-ink-secondary bg-surface-subtle rounded px-2 py-1 break-all">
-                            {shortHash(e.prev_hash)}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-ink-muted mb-0.5">this_hash</p>
-                          <p className="text-ink-secondary bg-surface-subtle rounded px-2 py-1 break-all">
-                            {shortHash(e.this_hash)}
-                          </p>
-                        </div>
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        {e.prev_hash ? <CryptoValue label="Previous hash" value={e.prev_hash} compact /> : (
+                          <div><p className="mb-1.5 text-2xs font-medium uppercase tracking-wider text-ink-muted">Previous hash</p><code className="block rounded-md border border-border bg-surface-subtle px-3 py-2 font-mono text-xs text-ink-secondary">GENESIS</code></div>
+                        )}
+                        <CryptoValue label="Current hash" value={e.this_hash} compact />
                       </div>
 
                       <details className="text-xs">
-                        <summary className="cursor-pointer text-ink-muted hover:text-ink-secondary">
+                        <summary className="cursor-pointer select-none font-medium text-ink-secondary hover:text-ink-primary">
                           Show payload
                         </summary>
-                        <pre className="mt-1 rounded bg-surface-subtle border border-border px-3 py-2 overflow-x-auto whitespace-pre-wrap text-ink-secondary">
+                        <pre className="mt-3 max-h-64 overflow-auto whitespace-pre-wrap rounded-md border border-border bg-surface-subtle px-3 py-2.5 font-mono text-xs leading-5 text-ink-secondary">
                           {JSON.stringify(e.payload, null, 2)}
                         </pre>
                       </details>
@@ -417,7 +437,7 @@ export default function DisputeDemoPage() {
             <button
               type="button"
               onClick={reset}
-              className="rounded-md border border-border text-sm px-5 py-2.5 text-ink-secondary hover:bg-surface-subtle transition-colors"
+              className="rounded-lg border border-border text-sm font-medium px-5 py-2.5 text-ink-secondary hover:bg-surface-subtle transition-colors duration-150"
             >
               ← Start over
             </button>
