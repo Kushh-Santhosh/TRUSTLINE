@@ -76,7 +76,7 @@ export async function generateRegistrationOptionsForUser(
 export async function verifyRegistration(
   email: string,
   response: RegistrationResponseJSON
-): Promise<void> {
+): Promise<{ userId: string }> {
   // 1. Retrieve stored challenge
   const expectedChallenge = challengeStore.get(email);
   if (!expectedChallenge) {
@@ -128,6 +128,8 @@ export async function verifyRegistration(
 
   // 6. Clear challenge — one-time use
   challengeStore.delete(email);
+
+  return { userId: rows[0].id };
 }
 
 // ── Login challenge store (separate from registration challenge store) ─────

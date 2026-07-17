@@ -94,12 +94,12 @@ router.post(
 
     try {
       logger.info({ email }, '[auth] register/verify: calling verifyRegistration');
-      await verifyRegistration(
+      const { userId } = await verifyRegistration(
         email.trim().toLowerCase(),
         response as Parameters<typeof verifyRegistration>[1]
       );
       logger.info({ email }, '[auth] register/verify: success');
-      res.json({ verified: true });
+      res.json({ verified: true, userId });
     } catch (err) {
       const isError = err instanceof Error;
       const message = isError && err.message ? err.message : 'verification failed';
