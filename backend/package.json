@@ -6,7 +6,10 @@
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
     "build": "tsc",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "migrate:up": "node -r dotenv/config ./node_modules/.bin/node-pg-migrate -m migrations up",
+    "migrate:down": "node -r dotenv/config ./node_modules/.bin/node-pg-migrate -m migrations down",
+    "migrate:create": "node -r dotenv/config ./node_modules/.bin/node-pg-migrate -m migrations create"
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",
@@ -26,6 +29,7 @@
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
+    "node-pg-migrate": "^9.0.0",
     "pg": "^8.22.0",
     "pino": "^10.3.1",
     "pino-http": "^11.0.0"
