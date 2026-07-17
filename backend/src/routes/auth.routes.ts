@@ -6,6 +6,7 @@ import {
   verifyLogin,
 } from '../services/webauthn.service';
 import { issueSession } from '../services/session.service';
+import { generateSecretForUser, verifyCode } from '../services/totp.service';
 
 const router = Router();
 
@@ -128,6 +129,63 @@ router.post(
     } catch (err) {
       const message = err instanceof Error && err.message ? err.message : 'verification failed';
       const status = message.includes('no pending') ? 400 : 401;
+      res.status(status).json({ error: message });
+    }
+  }
+);
+
+// ── POST /api/auth/totp/setup ──────────────────────────────────────────────
+// Body: { userId: string }
+// Returns: { secret: string, otpauthUrl: string }
+// Note: auth middleware applied in M4.9 — userId accepted directly for now.
+router.post(
+  '/totp/setup',
+  async (req: Request, res: Response): Promise<void> => {
+    const { userId } = req.body as { userId?: string };
+
+    if (!userId || typeof userId !== 'string') {
+      res.status(400).json({ error: 'userId is required' });
+      return;
+    }
+
+    try {
+      const payload = await generateSecretForUser(userId);
+      res.json(payload);
+    } catch (err) {
+      const message = err instanceof Error && err.message ? err.message : 'internal error';
+      const status = message === 'user not found' ? 404 : 500;
+      res.status(status).json({ error: message });
+    }
+  }
+);
+
+// ── POST /api/auth/totp/verify ─────────────────────────────────────────────
+// Body: { userId: string, code: string }
+// Returns: { enabled: true }
+router.post(
+  '/totp/verify',
+  async (req: Request, res: Response): Promise<void> => {
+    const { userId, code } = req.body as { userId?: string; code?: string };
+
+    if (!userId || typeof userId !== 'string') {
+      res.status(400).json({ error: 'userId is required' });
+      return;
+    }
+    if (!code || typeof code !== 'string') {
+      res.status(400).json({ error: 'code is required' });
+      return;
+    }
+
+    try {
+      await verifyCode(userId, code.trim());
+      res.json({ enabled: true });
+    } catch (err) {
+      const message = err instanceof Error && err.message ? err.message : 'verification failed';
+      const status =
+        message === 'user not found' ? 404
+        : message.includes('not set up') ? 400
+        : message === 'invalid TOTP code' ? 422
+        : 500;
       res.status(status).json({ error: message });
     }
   }
