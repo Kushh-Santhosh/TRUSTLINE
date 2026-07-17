@@ -14,7 +14,8 @@
     "verify-chain": "ts-node -r dotenv/config src/scripts/verifyChain.ts",
     "test": "vitest run",
     "test:watch": "vitest",
-    "load-test": "ts-node -r dotenv/config src/scripts/loadTest.ts"
+    "load-test": "ts-node -r dotenv/config src/scripts/loadTest.ts",
+    "smoke-test": "ts-node -r dotenv/config src/scripts/smokeTest.ts"
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",

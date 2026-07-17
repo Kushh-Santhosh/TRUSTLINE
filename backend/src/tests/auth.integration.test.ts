@@ -36,8 +36,6 @@ import config from '../lib/config';
 function makeAccessToken()  { return jwt.sign({ sub: TEST_USER_ID }, config.JWT_SECRET, { expiresIn: '15m' }); }
 function makeRefreshToken() { return jwt.sign({ sub: TEST_USER_ID, type: 'refresh', jti: Math.random().toString(36).slice(2) }, config.JWT_SECRET, { expiresIn: '7d' }); }
 
-// Shared tokens for replay test (need to persist between tests)
-let sharedRefreshToken = '';
 
 // ── Mock: @simplewebauthn/server ─────────────────────────────────────────
 // vi.mock is hoisted — all values must be inline literals.
@@ -182,7 +180,6 @@ describe('Auth integration — full login flow (service-layer mocks)', () => {
     expect(res.body.accessToken).toMatch(JWT_SHAPE);
     expect(res.body.refreshToken).toMatch(JWT_SHAPE);
 
-    sharedRefreshToken = res.body.refreshToken as string;
   });
 
   it('POST /api/auth/login/verify missing response → 400', async () => {
