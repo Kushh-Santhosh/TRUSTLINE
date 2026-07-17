@@ -79,6 +79,22 @@ export async function createRequest(
   return rows[0];
 }
 
+// ── listResolvedRequests ───────────────────────────────────────────────────
+// M8.4 — Returns the most recent resolved approval requests for the dispute demo.
+// Read-only: no writes.
+export async function listResolvedRequests(limit = 20): Promise<RequestRow[]> {
+  const { rows } = await pool.query<RequestRow>(
+    `SELECT id, policy_id, policy_version_snapshot, requester_id,
+            action_payload, status, created_at, resolved_at,
+            escalated, break_glass, needs_review
+     FROM approval_requests
+     WHERE status IN ('approved', 'denied', 'expired')
+     ORDER BY resolved_at DESC NULLS LAST, created_at DESC
+     LIMIT $1`,
+    [limit]
+  );
+  return rows;
+}
 // ── submitVote ────────────────────────────────────────────────────────────
 export async function submitVote(
   requestId: string,

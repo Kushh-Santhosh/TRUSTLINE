@@ -14,7 +14,7 @@ import {
   listPolicies,
   type CreatePolicyData,
 } from '../services/policy.service';
-import { createRequest, submitVote, breakGlass } from '../services/request.service';
+import { createRequest, submitVote, breakGlass, listResolvedRequests } from '../services/request.service';
 import { createDelegation } from '../services/delegation.service';
 
 const router = Router();
@@ -228,6 +228,24 @@ router.post(
         : message.includes('already')                         ? 409
         : 500;
       res.status(status).json({ error: message });
+    }
+  }
+);
+
+// ── GET /api/approval/requests ──────────────────────────────────────────
+// Query: ?status=resolved (optional, filters to approved/denied/expired)
+// Returns: list of approval requests for the dispute demo picker
+// M8.4 — Read-only.
+router.get(
+  '/requests',
+  requireAuth,
+  async (_req: Request, res: Response): Promise<void> => {
+    try {
+      const rows = await listResolvedRequests();
+      res.json(rows);
+    } catch (err) {
+      const message = err instanceof Error && err.message ? err.message : 'internal error';
+      res.status(500).json({ error: message });
     }
   }
 );
