@@ -135,32 +135,26 @@ router.post(
 );
 
 // ── POST /api/approval/requests/:id/votes ────────────────────────────────────
-// Body: { decision: 'approve' | 'deny', signature: string }
-// Returns: { vote, request, quorumResult }
+// Body: { decision: 'approve' | 'deny' }
+// Returns: { vote (with server-generated Ed25519 signature), request, quorumResult }
 // approverId = req.userId (set by requireAuth)
+// Signature is generated server-side via signing.service (M6.3)
 router.post(
   '/requests/:id/votes',
   requireAuth,
   async (req: Request, res: Response): Promise<void> => {
     const requestId = req.params['id'] as string;
-    const { decision, signature } = req.body as {
-      decision?: string;
-      signature?: string;
-    };
+    const { decision } = req.body as { decision?: string };
 
     if (decision !== 'approve' && decision !== 'deny') {
       res.status(400).json({ error: 'decision must be "approve" or "deny"' });
-      return;
-    }
-    if (!signature || typeof signature !== 'string') {
-      res.status(400).json({ error: 'signature is required' });
       return;
     }
 
     const approverId = req.userId as string;
 
     try {
-      const result = await submitVote(requestId, approverId, decision, signature);
+      const result = await submitVote(requestId, approverId, decision);
       res.status(201).json(result);
     } catch (err) {
       const message = err instanceof Error && err.message ? err.message : 'internal error';

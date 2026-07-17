@@ -3,6 +3,7 @@
  * M5.4 — Vote submission with quorum evaluation
  * M5.5 — Delegation expiry check integrated into vote eligibility
  * M5.7 — Break-glass emergency access
+ * M6.3 — Server-side Ed25519 signature on every vote
  * Creates pending approval requests against a policy,
  * snapshotting the policy version at creation time.
  * Handles vote insertion, status transitions, and emergency overrides.
@@ -10,6 +11,7 @@
 import pool from '../db/pool';
 import { evaluateQuorum, type QuorumPolicy, type Vote } from './quorum.service';
 import { hasAnyDelegation, isActiveDelegate } from './delegation.service';
+import { sign } from './signing.service';
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -78,8 +80,7 @@ export async function createRequest(
 export async function submitVote(
   requestId: string,
   approverId: string,
-  decision: 'approve' | 'deny',
-  signature: string
+  decision: 'approve' | 'deny'
 ): Promise<SubmitVoteResult> {
   // 1. Fetch the request — must exist and be pending
   const { rows: requestRows } = await pool.query<RequestRow>(
@@ -109,7 +110,12 @@ export async function submitVote(
     }
   }
 
-  // 2-b. Insert vote — unique constraint (request_id, approver_id) prevents duplicates
+  // 2-b. Generate server-side Ed25519 signature (M6.3)
+  //   Payload: { requestId, decision, timestamp } — matches sign() spec.
+  const timestamp = new Date().toISOString();
+  const signature = await sign(approverId, { requestId, decision, timestamp });
+
+  // 2-c. Insert vote — unique constraint (request_id, approver_id) prevents duplicates
   let vote: VoteRow;
   try {
     const { rows: voteRows } = await pool.query<VoteRow>(
