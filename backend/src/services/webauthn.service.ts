@@ -6,11 +6,13 @@ import {
   generateRegistrationOptions,
   verifyRegistrationResponse,
   generateAuthenticationOptions,
+  verifyAuthenticationResponse,
 } from '@simplewebauthn/server';
 import type {
   PublicKeyCredentialCreationOptionsJSON,
   PublicKeyCredentialRequestOptionsJSON,
   RegistrationResponseJSON,
+  AuthenticationResponseJSON,
 } from '@simplewebauthn/server';
 import pool from '../db/pool';
 import config from '../lib/config';
@@ -158,4 +160,68 @@ export async function generateLoginOptionsForUser(
   loginChallengeStore.set(email, options.challenge);
 
   return options;
+}
+
+// ── verifyLogin ────────────────────────────────────────────────────────
+export async function verifyLogin(
+  email: string,
+  response: AuthenticationResponseJSON
+): Promise<string> { // returns userId
+  // 1. Retrieve stored login challenge
+  const expectedChallenge = loginChallengeStore.get(email);
+  if (!expectedChallenge) {
+    throw new Error('no pending login challenge — call /login/options first');
+  }
+
+  // 2. Look up user + matching credential
+  const { rows: users } = await pool.query<{ id: string }>(
+    'SELECT id FROM users WHERE email = $1',
+    [email]
+  );
+  if (!users[0]) throw new Error('user not found');
+  const userId = users[0].id;
+
+  const credentialId = response.id;
+  const { rows: creds } = await pool.query<{
+    id: string;
+    public_key: Buffer;
+    counter: number;
+  }>(
+    `SELECT id, public_key, counter
+     FROM webauthn_credentials
+     WHERE user_id = $1 AND credential_id = $2`,
+    [userId, credentialId]
+  );
+  if (!creds[0]) throw new Error('credential not found');
+
+  const storedCred = creds[0];
+
+  // 3. Verify assertion
+  const verification = await verifyAuthenticationResponse({
+    response,
+    expectedChallenge,
+    expectedOrigin: config.FRONTEND_ORIGIN,
+    expectedRPID: RP_ID,
+    credential: {
+      id: credentialId,
+      publicKey: new Uint8Array(storedCred.public_key),
+      counter: Number(storedCred.counter),
+    },
+  });
+
+  if (!verification.verified) {
+    throw new Error('authentication verification failed');
+  }
+
+  // 4. Update the credential counter (prevents replay attacks)
+  const { authenticationInfo } = verification;
+  await pool.query(
+    'UPDATE webauthn_credentials SET counter = $1 WHERE id = $2',
+    [authenticationInfo.newCounter, storedCred.id]
+  );
+
+  // 5. Clear login challenge — one-time use
+  loginChallengeStore.delete(email);
+
+  return userId;
 }

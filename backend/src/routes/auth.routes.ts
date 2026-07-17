@@ -3,7 +3,9 @@ import {
   generateRegistrationOptionsForUser,
   verifyRegistration,
   generateLoginOptionsForUser,
+  verifyLogin,
 } from '../services/webauthn.service';
+import { issueSession } from '../services/session.service';
 
 const router = Router();
 
@@ -91,6 +93,41 @@ router.post(
     } catch (err) {
       const message = err instanceof Error && err.message ? err.message : 'internal error';
       const status = message.includes('no credentials') ? 404 : 500;
+      res.status(status).json({ error: message });
+    }
+  }
+);
+
+// ── POST /api/auth/login/verify ──────────────────────────────────────────
+// Body: { email: string, response: AuthenticationResponseJSON }
+// Returns: { accessToken: string, refreshToken: string }
+router.post(
+  '/login/verify',
+  async (req: Request, res: Response): Promise<void> => {
+    const { email, response } = req.body as {
+      email?: string;
+      response?: unknown;
+    };
+
+    if (!email || typeof email !== 'string') {
+      res.status(400).json({ error: 'email is required' });
+      return;
+    }
+    if (!response || typeof response !== 'object') {
+      res.status(400).json({ error: 'response is required' });
+      return;
+    }
+
+    try {
+      const userId = await verifyLogin(
+        email.trim().toLowerCase(),
+        response as Parameters<typeof verifyLogin>[1]
+      );
+      const tokens = await issueSession(userId);
+      res.json(tokens);
+    } catch (err) {
+      const message = err instanceof Error && err.message ? err.message : 'verification failed';
+      const status = message.includes('no pending') ? 400 : 401;
       res.status(status).json({ error: message });
     }
   }
