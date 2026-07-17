@@ -167,7 +167,7 @@ All variables are documented in [`backend/.env.example`](backend/.env.example).
 |---|---|---|---|
 | `DATABASE_URL` | ✅ | — | PostgreSQL connection string |
 | `JWT_SECRET` | ✅ | — | Signs access tokens + encrypts approver private keys at rest |
-| `JWT_REFRESH_SECRET` | ☐ | — | Reserved; not currently read by the server |
+| `JWT_REFRESH_SECRET` | ✅ | — | Loaded by configuration but not yet used — refresh tokens are currently signed and verified with `JWT_SECRET` |
 | `PORT` | ☐ | `4000` | Backend listen port |
 | `FRONTEND_ORIGIN` | ☐ | `http://localhost:5173` | CORS allow-origin |
 | `WEBAUTHN_RP_ID` | ☐ | `localhost` | Must match the frontend domain |
