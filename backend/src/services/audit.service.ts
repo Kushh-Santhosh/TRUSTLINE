@@ -76,3 +76,68 @@ export async function appendAuditEntry(
     client.release();
   }
 }
+
+// ── Receipt types ─────────────────────────────────────────────────────────
+
+export interface VoteWithKey {
+  id: string;
+  approver_id: string;
+  decision: string;
+  signature: string;
+  public_key: string | null;   // null if approver has no signing key yet
+  created_at: Date;
+}
+
+export interface Receipt {
+  request_id: string;
+  votes: VoteWithKey[];
+  audit_entries: AuditEntry[];
+}
+
+// ── getReceiptForRequest ──────────────────────────────────────────────────
+// M6.7 — Returns the full cryptographic receipt for an approval request:
+//   - all votes with their Ed25519 signatures
+//   - the approver public keys (from signing_keys)
+//   - all audit_log entries whose payload references this requestId
+//
+// Read-only — no database writes.
+export async function getReceiptForRequest(requestId: string): Promise<Receipt | null> {
+  // 1. Verify the request exists
+  const { rows: requestRows } = await pool.query<{ id: string }>(
+    'SELECT id FROM approval_requests WHERE id = $1',
+    [requestId]
+  );
+  if (!requestRows[0]) return null;
+
+  // 2. Fetch votes joined with approver public keys
+  const { rows: voteRows } = await pool.query<VoteWithKey>(
+    `SELECT
+       av.id,
+       av.approver_id,
+       av.decision,
+       av.signature,
+       sk.public_key,
+       av.created_at
+     FROM approval_votes av
+     LEFT JOIN signing_keys sk ON sk.user_id = av.approver_id
+     WHERE av.request_id = $1
+     ORDER BY av.created_at ASC`,
+    [requestId]
+  );
+
+  // 3. Fetch audit log entries related to this request
+  //    Matches any row whose JSONB payload contains { "requestId": "<id>" }
+  const { rows: auditRows } = await pool.query<AuditEntry>(
+    `SELECT id, entry_type, payload, prev_hash, this_hash, created_at
+     FROM audit_log
+     WHERE payload @> $1::jsonb
+     ORDER BY id ASC`,
+    [JSON.stringify({ requestId })]
+  );
+
+  return {
+    request_id: requestId,
+    votes: voteRows,
+    audit_entries: auditRows,
+  };
+}
