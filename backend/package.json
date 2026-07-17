@@ -11,7 +11,9 @@
     "migrate:down": "node -r dotenv/config ./node_modules/.bin/node-pg-migrate -m migrations down",
     "migrate:create": "node -r dotenv/config ./node_modules/.bin/node-pg-migrate -m migrations create",
     "seed": "ts-node -r dotenv/config src/scripts/seed.ts",
-    "verify-chain": "ts-node -r dotenv/config src/scripts/verifyChain.ts"
+    "verify-chain": "ts-node -r dotenv/config src/scripts/verifyChain.ts",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",
@@ -26,7 +28,8 @@
     "eslint-config-prettier": "^9.1.2",
     "prettier": "^3.9.5",
     "ts-node-dev": "^2.0.0",
-    "typescript": "^5.5.4"
+    "typescript": "^5.5.4",
+    "vitest": "^4.1.10"
   },
   "dependencies": {
     "@simplewebauthn/server": "^13.3.2",
