@@ -5,7 +5,7 @@ import {
   generateLoginOptionsForUser,
   verifyLogin,
 } from '../services/webauthn.service';
-import { issueSession } from '../services/session.service';
+import { issueSession, rotateRefreshToken } from '../services/session.service';
 import { generateSecretForUser, verifyCode } from '../services/totp.service';
 
 const router = Router();
@@ -185,6 +185,35 @@ router.post(
         message === 'user not found' ? 404
         : message.includes('not set up') ? 400
         : message === 'invalid TOTP code' ? 422
+        : 500;
+      res.status(status).json({ error: message });
+    }
+  }
+);
+
+// ── POST /api/auth/refresh ───────────────────────────────────────────────
+// Body: { refreshToken: string }
+// Returns: { accessToken: string, refreshToken: string }
+// Reuse detected: 401 + full family revoked
+router.post(
+  '/refresh',
+  async (req: Request, res: Response): Promise<void> => {
+    const { refreshToken } = req.body as { refreshToken?: string };
+
+    if (!refreshToken || typeof refreshToken !== 'string') {
+      res.status(400).json({ error: 'refreshToken is required' });
+      return;
+    }
+
+    try {
+      const tokens = await rotateRefreshToken(refreshToken);
+      res.json(tokens);
+    } catch (err) {
+      const message = err instanceof Error && err.message ? err.message : 'token rotation failed';
+      const status =
+        message === 'invalid refresh token' ? 401
+        : message === 'refresh token expired' ? 401
+        : message.includes('reuse detected') ? 401
         : 500;
       res.status(status).json({ error: message });
     }
