@@ -16,6 +16,8 @@ import type {
 } from '@simplewebauthn/server';
 import pool from '../db/pool';
 import config from '../lib/config';
+import { generateKeypairForUser } from './keys.service';
+import logger from '../lib/logger';
 
 // ── Relying Party config ───────────────────────────────────────────────────
 const RP_NAME = 'TrustLine';
@@ -116,7 +118,15 @@ export async function verifyRegistration(
     ]
   );
 
-  // 5. Clear challenge — one-time use
+  // 5. Generate Ed25519 signing keypair for this user (M6.1)
+  //    Non-fatal: if key generation fails, log and continue — credential is already persisted.
+  try {
+    await generateKeypairForUser(rows[0].id);
+  } catch (err) {
+    logger.error({ err, userId: rows[0].id }, 'keys.service: keypair generation failed after registration');
+  }
+
+  // 6. Clear challenge — one-time use
   challengeStore.delete(email);
 }
 
