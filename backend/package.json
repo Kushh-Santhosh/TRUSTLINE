@@ -9,7 +9,8 @@
     "typecheck": "tsc --noEmit",
     "migrate:up": "node -r dotenv/config ./node_modules/.bin/node-pg-migrate -m migrations up",
     "migrate:down": "node -r dotenv/config ./node_modules/.bin/node-pg-migrate -m migrations down",
-    "migrate:create": "node -r dotenv/config ./node_modules/.bin/node-pg-migrate -m migrations create"
+    "migrate:create": "node -r dotenv/config ./node_modules/.bin/node-pg-migrate -m migrations create",
+    "seed": "ts-node -r dotenv/config src/scripts/seed.ts"
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",
