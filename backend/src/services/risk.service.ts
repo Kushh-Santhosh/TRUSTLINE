@@ -1,21 +1,43 @@
 /**
  * M7.2 — Risk scoring heuristic
  * M7.4 — Risk decision audit logging
- * Scores a login attempt as 'low' | 'medium' | 'high' based on
- * how familiar the presenting IP + user-agent combination is
- * relative to the user's last 5 login events.
+ * M8.2 — In-memory step-up rate limiter for MFA fatigue detection
  *
- * Rules (exactly as specified in playbook):
- *   high   — no login history at all (first login)
- *   medium — history exists, IP is new, but user-agent matches history
- *   low    — otherwise (IP has been seen before)
+ * Scoring rules:
+ *   high   — no login history at all
+ *   medium — IP is new, user-agent matches history
+ *   low    — otherwise
  *
- * M7.4: before returning the score, calls appendAuditEntry('risk_decision', ...)
- * Audit failures are fail-open — they never block login or step-up.
+ * Rate limiter: >3 step-up attempts within 60 s → blocked (429).
+ * Uses an in-memory Map (resets on server restart).
  */
 import pool from '../db/pool';
 import { appendAuditEntry } from './audit.service';
 import logger from '../lib/logger';
+
+// ── M8.2: In-memory step-up rate limiter ──────────────────────────────────
+
+const STEP_UP_WINDOW_MS  = 60_000; // 60 seconds
+const STEP_UP_MAX_ATTEMPTS = 3;    // block after more than 3 in the window
+
+/** userId → timestamps of recent step-up attempts */
+const stepUpAttempts = new Map<string, number[]>();
+
+/** Record an attempt and return true if the user is now blocked. */
+export function recordStepUpAttempt(userId: string): boolean {
+  const now  = Date.now();
+  const prev = (stepUpAttempts.get(userId) ?? []).filter((t) => now - t < STEP_UP_WINDOW_MS);
+  prev.push(now);
+  stepUpAttempts.set(userId, prev);
+  return prev.length > STEP_UP_MAX_ATTEMPTS;
+}
+
+/** Check-only (does not record). Returns true if already blocked. */
+export function isStepUpBlocked(userId: string): boolean {
+  const now  = Date.now();
+  const prev = (stepUpAttempts.get(userId) ?? []).filter((t) => now - t < STEP_UP_WINDOW_MS);
+  return prev.length > STEP_UP_MAX_ATTEMPTS;
+}
 
 // ── Types ─────────────────────────────────────────────────────────────────
 

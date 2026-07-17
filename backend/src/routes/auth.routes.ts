@@ -8,7 +8,7 @@ import {
 } from '../services/webauthn.service';
 import { issueSession, rotateRefreshToken } from '../services/session.service';
 import { generateSecretForUser, verifyCode } from '../services/totp.service';
-import { scoreLoginRisk } from '../services/risk.service';
+import { scoreLoginRisk, recordStepUpAttempt } from '../services/risk.service';
 import config from '../lib/config';
 
 // Short-lived pending token TTL (5 minutes) — bridges WebAuthn success → TOTP step-up
@@ -184,7 +184,19 @@ router.post(
     }
 
     try {
-      // 1. Verify the pending token (issued by /login/verify on medium/high risk)
+      // M8.2 — Rate-limit check: decode token without verifying signature to get userId,
+      // then record the attempt. If >3 in 60 s → 429 immediately.
+      const decoded0 = jwt.decode(pendingToken) as { sub?: string; purpose?: string } | null;
+      const candidateUserId = decoded0?.sub ?? '';
+      if (candidateUserId) {
+        const blocked = recordStepUpAttempt(candidateUserId);
+        if (blocked) {
+          res.status(429).json({ blocked: true, error: 'too many step-up attempts — try again later' });
+          return;
+        }
+      }
+
+      // 1. Full JWT verify (checks signature + expiry)
       const decoded = jwt.verify(pendingToken, config.JWT_SECRET) as {
         sub: string;
         purpose: string;
