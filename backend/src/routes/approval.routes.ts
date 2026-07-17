@@ -1,5 +1,6 @@
 /**
  * M5.1 — Approval policy routes
+ * M5.2 — Approval request creation
  * All endpoints protected by requireAuth middleware.
  */
 import { Router, type Request, type Response } from 'express';
@@ -10,6 +11,7 @@ import {
   listPolicies,
   type CreatePolicyData,
 } from '../services/policy.service';
+import { createRequest } from '../services/request.service';
 
 const router = Router();
 
@@ -89,6 +91,41 @@ router.get(
     } catch (err) {
       const message = err instanceof Error && err.message ? err.message : 'internal error';
       res.status(500).json({ error: message });
+    }
+  }
+);
+
+// ── POST /api/approval/requests ───────────────────────────────────────────────
+// Body: { policyId: string, actionPayload: object }
+// Returns: 201 + created request row (status: 'pending', policy_version_snapshot captured)
+router.post(
+  '/requests',
+  requireAuth,
+  async (req: Request, res: Response): Promise<void> => {
+    const { policyId, actionPayload } = req.body as {
+      policyId?: string;
+      actionPayload?: unknown;
+    };
+
+    if (!policyId || typeof policyId !== 'string') {
+      res.status(400).json({ error: 'policyId is required' });
+      return;
+    }
+    if (actionPayload === undefined || actionPayload === null) {
+      res.status(400).json({ error: 'actionPayload is required' });
+      return;
+    }
+
+    // req.userId is guaranteed by requireAuth
+    const requesterId = req.userId as string;
+
+    try {
+      const request = await createRequest(policyId, requesterId, actionPayload);
+      res.status(201).json(request);
+    } catch (err) {
+      const message = err instanceof Error && err.message ? err.message : 'internal error';
+      const status = message === 'policy not found' ? 404 : 500;
+      res.status(status).json({ error: message });
     }
   }
 );
