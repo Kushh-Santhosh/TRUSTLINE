@@ -42,7 +42,12 @@ async function issueRefreshToken(userId: string, familyId: string): Promise<stri
 
 // ── issueSession ───────────────────────────────────────────────────────────
 // Creates a brand-new session (new family_id). Called after login (M4.5).
-export async function issueSession(userId: string): Promise<SessionTokens> {
+// M7.1: also accepts ip + userAgent for device fingerprint capture.
+export async function issueSession(
+  userId: string,
+  ip?: string,
+  userAgent?: string
+): Promise<SessionTokens> {
   // 1. Sign access token (JWT)
   const accessToken = jwt.sign(
     { sub: userId },
@@ -59,7 +64,15 @@ export async function issueSession(userId: string): Promise<SessionTokens> {
   // 3. Persist hashed refresh token
   const refreshToken = await issueRefreshToken(userId, familyId);
 
-  // M6.5 — Audit: record login event (fail-open: does not break login if audit is unavailable)
+  // 4. M7.1 — Record login event for risk scoring (fail-open)
+  pool.query(
+    `INSERT INTO login_events (user_id, ip, user_agent) VALUES ($1, $2, $3)`,
+    [userId, ip ?? null, userAgent ?? null]
+  ).catch((err) =>
+    logger.error({ err, userId }, 'login_events: failed to record login event')
+  );
+
+  // M6.5 — Audit: record login event (fail-open)
   appendAuditEntry('login', { userId }).catch((err) =>
     logger.error({ err, userId }, 'audit: failed to log login event')
   );

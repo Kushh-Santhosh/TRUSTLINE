@@ -124,7 +124,11 @@ router.post(
         email.trim().toLowerCase(),
         response as Parameters<typeof verifyLogin>[1]
       );
-      const tokens = await issueSession(userId);
+      const tokens = await issueSession(
+        userId,
+        req.ip,
+        req.headers['user-agent'] as string | undefined
+      );
       res.json(tokens);
     } catch (err) {
       const message = err instanceof Error && err.message ? err.message : 'verification failed';
