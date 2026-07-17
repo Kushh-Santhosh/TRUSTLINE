@@ -15,21 +15,28 @@ COPY . .
 # Compile src/ → dist/
 RUN npm run build
 
-# ── Stage 3: lean production image ─────────────────────────────────────────
+# ── Stage 3: runtime image (includes devDeps for ts-node / seed / migrate) ─
 FROM node:20-alpine AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production
 
-# Only production dependencies in the final image
+# Install ALL dependencies so every npm script works inside the container
+# (migrate:up needs node-pg-migrate, seed needs ts-node)
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev
+RUN npm ci
 
 # Compiled output from builder
 COPY --from=builder /app/dist ./dist
 
-# Copy migrations so migrate:up can be run inside the container
+# Source files needed by ts-node scripts (seed, loadTest, verifyChain)
+COPY src ./src
+
+# Migrations directory
 COPY migrations ./migrations
+
+# tsconfig needed for ts-node compilation
+COPY tsconfig.json ./
 
 EXPOSE 4000
 
