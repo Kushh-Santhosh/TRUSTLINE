@@ -9,6 +9,8 @@ import {
 import { issueSession, rotateRefreshToken } from '../services/session.service';
 import { generateSecretForUser, verifyCode } from '../services/totp.service';
 import { scoreLoginRisk, recordStepUpAttempt } from '../services/risk.service';
+import { requireAuth } from '../middleware/requireAuth';
+import pool from '../db/pool';
 import config from '../lib/config';
 import logger from '../lib/logger';
 
@@ -357,6 +359,113 @@ router.post(
         : message.includes('reuse detected') ? 401
         : 500;
       res.status(status).json({ error: message });
+    }
+  }
+);
+
+// ── GET /api/auth/sessions ────────────────────────────────────────────────
+// Returns active (non-revoked, non-expired) refresh token families for the
+// current user, joined with their most recent login_event for device context.
+router.get(
+  '/sessions',
+  requireAuth,
+  async (req: Request, res: Response): Promise<void> => {
+    const userId = req.userId as string;
+    try {
+      const { rows } = await pool.query<{
+        id: string;
+        family_id: string;
+        created_at: Date;
+        expires_at: Date;
+        ip: string | null;
+        user_agent: string | null;
+        last_seen: Date | null;
+      }>(
+        `SELECT
+           rt.id,
+           rt.family_id,
+           rt.created_at,
+           rt.expires_at,
+           le.ip,
+           le.user_agent,
+           le.created_at AS last_seen
+         FROM refresh_tokens rt
+         LEFT JOIN LATERAL (
+           SELECT ip, user_agent, created_at
+           FROM login_events
+           WHERE user_id = rt.user_id
+           ORDER BY created_at DESC
+           LIMIT 1
+         ) le ON true
+         WHERE rt.user_id = $1
+           AND rt.revoked = false
+           AND rt.expires_at > now()
+         ORDER BY rt.created_at DESC
+         LIMIT 20`,
+        [userId]
+      );
+      res.json(rows);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'internal error';
+      res.status(500).json({ error: message });
+    }
+  }
+);
+
+// ── DELETE /api/auth/sessions/:familyId ──────────────────────────────────
+// Revokes all tokens in the specified family for the current user.
+router.delete(
+  '/sessions/:familyId',
+  requireAuth,
+  async (req: Request, res: Response): Promise<void> => {
+    const userId = req.userId as string;
+    const { familyId } = req.params as { familyId: string };
+    try {
+      const { rowCount } = await pool.query(
+        `UPDATE refresh_tokens
+         SET revoked = true
+         WHERE family_id = $1 AND user_id = $2 AND revoked = false`,
+        [familyId, userId]
+      );
+      if (!rowCount || rowCount === 0) {
+        res.status(404).json({ error: 'session not found or already revoked' });
+        return;
+      }
+      res.json({ revoked: true });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'internal error';
+      res.status(500).json({ error: message });
+    }
+  }
+);
+
+// ── GET /api/auth/audit ───────────────────────────────────────────────────
+// Returns recent audit log entries whose payload references the current userId.
+// Limit: 50 most recent entries.
+router.get(
+  '/audit',
+  requireAuth,
+  async (req: Request, res: Response): Promise<void> => {
+    const userId = req.userId as string;
+    try {
+      const { rows } = await pool.query<{
+        id: string;
+        entry_type: string;
+        payload: unknown;
+        created_at: Date;
+      }>(
+        `SELECT id, entry_type, payload, created_at
+         FROM audit_log
+         WHERE payload @> $1::jsonb
+            OR payload @> $2::jsonb
+         ORDER BY id DESC
+         LIMIT 50`,
+        [JSON.stringify({ userId }), JSON.stringify({ approverId: userId })]
+      );
+      res.json(rows);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'internal error';
+      res.status(500).json({ error: message });
     }
   }
 );

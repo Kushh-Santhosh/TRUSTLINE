@@ -15,16 +15,19 @@ export class ApiError extends Error {
 async function request<T>(
   method: string,
   path: string,
-  body?: unknown
+  body?: unknown,
+  authToken?: string | null
 ): Promise<T> {
   const url = `${BASE_URL}${path}`;
 
-  const init: RequestInit = {
-    method,
-    headers: {
-      'Content-Type': 'application/json',
-    },
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
   };
+  if (authToken) {
+    headers['Authorization'] = `Bearer ${authToken}`;
+  }
+
+  const init: RequestInit = { method, headers };
 
   if (body !== undefined) {
     init.body = JSON.stringify(body);
@@ -73,5 +76,19 @@ export const apiClient = {
     return request<T>('DELETE', path);
   },
 };
+
+// ── Authenticated helpers — include Bearer token ───────────────────────────
+// Kept separate from apiClient to avoid circular dependency with auth.ts.
+export function authedGet<T>(path: string, token: string): Promise<T> {
+  return request<T>('GET', path, undefined, token);
+}
+
+export function authedPost<T>(path: string, token: string, body?: unknown): Promise<T> {
+  return request<T>('POST', path, body, token);
+}
+
+export function authedDel<T>(path: string, token: string): Promise<T> {
+  return request<T>('DELETE', path, undefined, token);
+}
 
 export default apiClient;

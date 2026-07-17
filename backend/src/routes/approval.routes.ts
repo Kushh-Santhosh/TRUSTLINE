@@ -8,6 +8,7 @@
  */
 import { Router, type Request, type Response } from 'express';
 import { requireAuth } from '../middleware/requireAuth';
+import pool from '../db/pool';
 import {
   createPolicy,
   getPolicy,
@@ -250,4 +251,38 @@ router.get(
   }
 );
 
+// ── GET /api/approval/requests/pending ────────────────────────────────────
+// Returns all pending approval requests (for the dashboard approvals panel).
+
+router.get(
+  '/requests/pending',
+  requireAuth,
+  async (_req: Request, res: Response): Promise<void> => {
+    try {
+      const { rows } = await pool.query<{
+        id: string;
+        policy_id: string;
+        requester_id: string;
+        action_payload: unknown;
+        status: string;
+        created_at: Date;
+        escalated: boolean;
+        break_glass: boolean;
+      }>(
+        `SELECT id, policy_id, requester_id, action_payload, status,
+                created_at, escalated, break_glass
+         FROM approval_requests
+         WHERE status = 'pending'
+         ORDER BY created_at DESC
+         LIMIT 50`
+      );
+      res.json(rows);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'internal error';
+      res.status(500).json({ error: message });
+    }
+  }
+);
+
 export default router;
+
