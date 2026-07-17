@@ -20,7 +20,12 @@ router.post(
       const options = await generateRegistrationOptionsForUser(email.trim().toLowerCase());
       res.json(options);
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'internal error';
+      let message = 'internal error';
+      if (err instanceof Error && err.message) {
+        message = err.message;
+      } else if (err && typeof err === 'object' && 'code' in err) {
+        message = String((err as Record<string, unknown>).code);
+      }
       res.status(500).json({ error: message });
     }
   }
