@@ -1,0 +1,41 @@
+{
+  "name": "trustline",
+  "version": "0.1.0",
+  "private": true,
+  "description": "TrustLine — Phishing-resistant authentication & approval platform",
+  "packageManager": "pnpm@9.0.0",
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "scripts": {
+    "dev": "pnpm --parallel --filter './apps/*' dev",
+    "dev:api": "pnpm --filter @trustline/api dev",
+    "dev:web": "pnpm --filter @trustline/web dev",
+    "build": "pnpm --filter './apps/*' build",
+    "lint": "pnpm --filter './apps/*' lint",
+    "format": "prettier --write \"**/*.{ts,tsx,js,json,md}\" --ignore-path .gitignore",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,json,md}\" --ignore-path .gitignore",
+    "typecheck": "pnpm --filter './apps/*' typecheck",
+    "test": "pnpm --filter './apps/*' test",
+    "db:migrate": "pnpm --filter @trustline/api db:migrate",
+    "db:studio": "pnpm --filter @trustline/api db:studio",
+    "db:seed": "pnpm --filter @trustline/api db:seed",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^7.18.0",
+    "@typescript-eslint/parser": "^7.18.0",
+    "eslint": "^8.57.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-import": "^2.29.1",
+    "prettier": "^3.3.3",
+    "typescript": "^5.5.4"
+  }
+}
