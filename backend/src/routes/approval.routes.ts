@@ -2,6 +2,7 @@
  * M5.1 — Approval policy routes
  * M5.2 — Approval request creation
  * M5.4 — Vote submission
+ * M5.5 — Delegation management
  * All endpoints protected by requireAuth middleware.
  */
 import { Router, type Request, type Response } from 'express';
@@ -13,6 +14,7 @@ import {
   type CreatePolicyData,
 } from '../services/policy.service';
 import { createRequest, submitVote } from '../services/request.service';
+import { createDelegation } from '../services/delegation.service';
 
 const router = Router();
 
@@ -165,6 +167,47 @@ router.post(
         message === 'request not found' ? 404
         : message.includes('already') ? 409
         : 500;
+      res.status(status).json({ error: message });
+    }
+  }
+);
+
+// ── POST /api/approval/delegations ───────────────────────────────────────────────
+// Body: { delegateId: string, expiresAt: string (ISO 8601) }
+// Returns: 201 + delegation row
+// delegatorId = req.userId (set by requireAuth)
+router.post(
+  '/delegations',
+  requireAuth,
+  async (req: Request, res: Response): Promise<void> => {
+    const { delegateId, expiresAt } = req.body as {
+      delegateId?: string;
+      expiresAt?: string;
+    };
+
+    if (!delegateId || typeof delegateId !== 'string') {
+      res.status(400).json({ error: 'delegateId is required' });
+      return;
+    }
+    if (!expiresAt || typeof expiresAt !== 'string') {
+      res.status(400).json({ error: 'expiresAt is required (ISO 8601 timestamp)' });
+      return;
+    }
+
+    const expiresAtDate = new Date(expiresAt);
+    if (isNaN(expiresAtDate.getTime())) {
+      res.status(400).json({ error: 'expiresAt is not a valid ISO 8601 timestamp' });
+      return;
+    }
+
+    const delegatorId = req.userId as string;
+
+    try {
+      const delegation = await createDelegation(delegatorId, delegateId, expiresAtDate);
+      res.status(201).json(delegation);
+    } catch (err) {
+      const message = err instanceof Error && err.message ? err.message : 'internal error';
+      const status = message.includes('must be') ? 400 : 500;
       res.status(status).json({ error: message });
     }
   }

@@ -1,12 +1,14 @@
 /**
  * M5.2 — Approval request service
  * M5.4 — Vote submission with quorum evaluation
+ * M5.5 — Delegation expiry check integrated into vote eligibility
  * Creates pending approval requests against a policy,
  * snapshotting the policy version at creation time.
  * Handles vote insertion and request status transitions.
  */
 import pool from '../db/pool';
 import { evaluateQuorum, type QuorumPolicy, type Vote } from './quorum.service';
+import { hasAnyDelegation, isActiveDelegate } from './delegation.service';
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -89,7 +91,19 @@ export async function submitVote(
     throw new Error(`request is already ${currentRequest.status}`);
   }
 
-  // 2. Insert vote — unique constraint (request_id, approver_id) prevents duplicates
+  // 2-a. Delegation expiry check:
+  //   If the voter appears as a delegate in any delegation record,
+  //   they must have at least one active (non-expired) delegation.
+  //   Direct approvers (no delegation records) pass through unchanged.
+  const isDelegate = await hasAnyDelegation(approverId);
+  if (isDelegate) {
+    const active = await isActiveDelegate(approverId);
+    if (!active) {
+      throw new Error('delegation expired — vote not accepted');
+    }
+  }
+
+  // 2-b. Insert vote — unique constraint (request_id, approver_id) prevents duplicates
   let vote: VoteRow;
   try {
     const { rows: voteRows } = await pool.query<VoteRow>(
