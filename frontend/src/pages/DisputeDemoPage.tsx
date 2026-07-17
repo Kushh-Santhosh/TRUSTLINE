@@ -10,7 +10,7 @@
  *   5. Confirm the claim is false — the evidence is immutable
  */
 import { useState, useEffect } from 'react';
-import apiClient, { ApiError } from '../lib/apiClient';
+import { ApiError, authedGet } from '../lib/apiClient';
 import { getAccessToken } from '../lib/auth';
 
 // ── Types ─────────────────────────────────────────────────────────────────
@@ -77,11 +77,17 @@ export default function DisputeDemoPage() {
   const [receiptLoading, setReceiptLoading] = useState(false);
   const [receiptErr, setReceiptErr] = useState('');
 
-  // ── Fetch resolved requests on mount ────────────────────────────────────
+  // ── Fetch resolved requests on mount ──────────────────────────────────────
   useEffect(() => {
     async function load() {
+      const token = getAccessToken();
+      if (!token) {
+        setLoadErr('401: Not signed in — please sign in first.');
+        setLoading(false);
+        return;
+      }
       try {
-        const rows = await apiClient.get<ApprovalRequest[]>('/api/approval/requests');
+        const rows = await authedGet<ApprovalRequest[]>('/api/approval/requests', token);
         setRequests(rows);
       } catch (err) {
         setLoadErr(
@@ -104,26 +110,22 @@ export default function DisputeDemoPage() {
     setReceiptErr('');
   }
 
-  // ── Reveal receipt ───────────────────────────────────────────────────────
+  // ── Reveal receipt ─────────────────────────────────────────────────────────
   async function revealReceipt() {
     if (!selected) return;
+    const token = getAccessToken();
+    if (!token) {
+      setReceiptErr('Not signed in — please sign in first.');
+      return;
+    }
     setReceiptLoading(true);
     setReceiptErr('');
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-      const data = await fetch(
-        `/api/ledger/receipt/${selected.id}`,
-        { headers }
-      ).then(async (r) => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return r.json() as Promise<Receipt>;
-      });
+      const data = await authedGet<Receipt>(`/api/ledger/receipt/${selected.id}`, token);
       setReceipt(data);
       setPhase('reveal');
     } catch (err) {
-      setReceiptErr(err instanceof Error ? err.message : 'Failed to load receipt');
+      setReceiptErr(err instanceof ApiError ? err.message : err instanceof Error ? err.message : 'Failed to load receipt');
     } finally {
       setReceiptLoading(false);
     }

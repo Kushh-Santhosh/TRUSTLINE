@@ -41,6 +41,12 @@ interface AuditEntry {
   created_at: string;
 }
 
+interface PolicyRow {
+  id: string;
+  name: string;
+  quorum_type: string;
+}
+
 type LoadState<T> = { status: 'loading' } | { status: 'error'; message: string } | { status: 'ok'; data: T };
 
 // ── Helpers ───────────────────────────────────────────────────────────────
@@ -212,6 +218,7 @@ export default function DashboardPage() {
   const [activity, setActivity]     = useState<LoadState<AuditEntry[]>>({ status: 'loading' });
   const [revokingId, setRevokingId] = useState<string | null>(null);
   const [votingId, setVotingId]     = useState<string | null>(null);
+  const [demoStatus, setDemoStatus] = useState<{ type: 'idle' | 'loading' | 'success' | 'error'; message?: string }>({ type: 'idle' });
 
   // ── Data fetchers ────────────────────────────────────────────────────────
 
@@ -295,6 +302,50 @@ export default function DashboardPage() {
       alert(apiErrorMsg(err));
     } finally {
       setVotingId(null);
+    }
+  }
+
+  // ── Demo: Create Approval Request ────────────────────────────────────
+  // 1. Find or create a demo policy (single_senior quorum — one vote resolves).
+  // 2. Create a demo approval request.
+  // 3. Refresh Pending Approvals so the new request is instantly visible.
+  async function createDemoRequest() {
+    if (!token || demoStatus.type === 'loading') return;
+    setDemoStatus({ type: 'loading' });
+    try {
+      // Step 1: find an existing demo policy
+      const policies = await authedGet<PolicyRow[]>('/api/approval/policies', token);
+      let policyId: string;
+      const existing = policies.find((p) => p.name === 'TrustLine Demo Policy');
+      if (existing) {
+        policyId = existing.id;
+      } else {
+        // Create a policy with single_senior quorum — one approve/deny vote resolves immediately
+        const created = await authedPost<PolicyRow>('/api/approval/policies', token, {
+          name: 'TrustLine Demo Policy',
+          quorum_type: 'single_senior',
+          eligible_roles: ['demo_approver'],
+        });
+        policyId = created.id;
+      }
+
+      // Step 2: create a demo request with a descriptive payload
+      await authedPost('/api/approval/requests', token, {
+        policyId,
+        actionPayload: {
+          action: 'demo_transfer',
+          amount: '1000.00',
+          currency: 'USD',
+          description: 'Demo: high-value transfer requiring approval',
+          createdAt: new Date().toISOString(),
+        },
+      });
+
+      setDemoStatus({ type: 'success', message: 'Demo request created — approve or deny it in Pending Approvals.' });
+      // Step 3: reload Pending Approvals
+      void loadApprovals();
+    } catch (err) {
+      setDemoStatus({ type: 'error', message: apiErrorMsg(err) });
     }
   }
 
@@ -551,6 +602,69 @@ export default function DashboardPage() {
             </div>
           )}
         </SectionCard>
+
+        {/* ── Demo: Create Approval Request ── */}
+        <section aria-labelledby="demo-heading">
+          <div className="flex items-center gap-2 mb-3">
+            <h2 id="demo-heading" className="text-base font-semibold text-ink-primary">
+              Demo: Approval Workflow
+            </h2>
+            <span className="rounded-full bg-accent/15 text-accent text-xs font-semibold px-2 py-0.5">
+              Try it
+            </span>
+          </div>
+          <div className="rounded-xl border border-border bg-surface-elevated shadow overflow-hidden">
+            <div className="px-6 py-5 space-y-4">
+              <p className="text-sm text-ink-secondary">
+                Create a demo approval request to try the full workflow:{' '}
+                <strong className="text-ink-primary">create → approve/deny → view receipt</strong>.
+                After voting, the resolved request will appear in{' '}
+                <a href="/demo/dispute" className="text-accent underline underline-offset-2 hover:text-accent-hover">
+                  Dispute Resolution
+                </a>{' '}
+                with its cryptographic evidence.
+              </p>
+
+              {demoStatus.type === 'error' && (
+                <div className="rounded-md bg-danger/10 border border-danger/30 px-4 py-3 text-sm text-danger">
+                  {demoStatus.message}
+                </div>
+              )}
+              {demoStatus.type === 'success' && (
+                <div className="rounded-md bg-success/10 border border-success/30 px-4 py-3 text-sm text-success">
+                  {demoStatus.message}
+                </div>
+              )}
+
+              <div className="flex flex-wrap gap-3 items-center">
+                <button
+                  id="create-demo-request-btn"
+                  type="button"
+                  disabled={demoStatus.type === 'loading'}
+                  onClick={createDemoRequest}
+                  className="
+                    rounded-md bg-accent text-surface-base font-semibold
+                    text-sm px-5 py-2.5 hover:bg-accent-hover
+                    transition-colors shadow-accent disabled:opacity-60 disabled:cursor-not-allowed
+                  "
+                >
+                  {demoStatus.type === 'loading' ? 'Creating…' : '＋ Create demo request'}
+                </button>
+                <a
+                  href="/demo/dispute"
+                  className="text-sm font-medium text-accent hover:text-accent-hover underline underline-offset-2 transition-colors"
+                >
+                  View Dispute Resolution →
+                </a>
+              </div>
+
+              <p className="text-xs text-ink-muted">
+                The demo policy uses <code className="font-mono bg-surface-subtle px-1 rounded">single_senior</code> quorum — one vote resolves the request immediately.
+                Every vote is signed with Ed25519 and recorded in the tamper-evident audit chain.
+              </p>
+            </div>
+          </div>
+        </section>
 
       </main>
     </div>
