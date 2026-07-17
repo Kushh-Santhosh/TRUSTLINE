@@ -1,5 +1,5 @@
 import express from 'express';
-import cors from 'cors';
+import cors, { type CorsOptions } from 'cors';
 import pinoHttp from 'pino-http';
 import logger from './lib/logger';
 import config from './lib/config';
@@ -17,8 +17,20 @@ app.use(pinoHttp({ logger }));
 // Body parsing
 app.use(express.json());
 
-// CORS — allow frontend origin from validated config
-app.use(cors({ origin: config.FRONTEND_ORIGIN, credentials: true }));
+// CORS — honors FRONTEND_ORIGIN and accepts both local Vite development ports.
+const corsOptions: CorsOptions = {
+  credentials: true,
+  origin(origin, callback) {
+    // Requests without an Origin header (health checks, curl, server-to-server) are safe.
+    if (!origin || config.FRONTEND_ORIGINS.includes(origin)) {
+      callback(null, true);
+      return;
+    }
+    callback(new Error(`CORS origin not allowed: ${origin}`));
+  },
+};
+
+app.use(cors(corsOptions));
 
 import pool from './db/pool';
 
