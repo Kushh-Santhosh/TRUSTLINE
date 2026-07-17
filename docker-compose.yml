@@ -57,6 +57,10 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+    # Use the same secrets for Docker and direct local backend runs. This is
+    # required to decrypt existing user signing keys and verify JWT sessions.
+    env_file:
+      - ./backend/.env
     restart: unless-stopped
     ports:
       - "4000:4000"
@@ -70,9 +74,6 @@ services:
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/trustline
       # Redis — use service name as hostname
       REDIS_URL: redis://redis:6379
-      # JWT secrets — override in .env or via environment
-      JWT_SECRET: ${JWT_SECRET:-change-me-to-a-long-random-secret-for-docker}
-      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-change-me-to-a-different-long-random-secret-for-docker}
       # Server
       PORT: 4000
       NODE_ENV: production

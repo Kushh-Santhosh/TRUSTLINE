@@ -10,6 +10,7 @@
  *   5. Confirm the claim is false — the evidence is immutable
  */
 import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { ApiError, authedGet } from '../lib/apiClient';
 import { getAccessToken } from '../lib/auth';
 
@@ -246,9 +247,9 @@ export default function DisputeDemoPage() {
                   <p className="mt-1 text-xs leading-5 text-ink-muted">
                     Create and approve a request from the Dashboard first.
                   </p>
-                  <a href="/dashboard" className="mt-3 text-xs text-accent hover:underline">
+                  <Link to="/dashboard" className="mt-3 text-xs text-accent hover:underline">
                     Go to Dashboard →
-                  </a>
+                  </Link>
                 </div>
               )}
               {!loading && requests.length > 0 && (

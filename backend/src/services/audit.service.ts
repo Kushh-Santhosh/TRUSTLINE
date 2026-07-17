@@ -101,11 +101,11 @@ export interface Receipt {
 //   - all audit_log entries whose payload references this requestId
 //
 // Read-only — no database writes.
-export async function getReceiptForRequest(requestId: string): Promise<Receipt | null> {
+export async function getReceiptForRequest(requestId: string, requesterId: string): Promise<Receipt | null> {
   // 1. Verify the request exists
   const { rows: requestRows } = await pool.query<{ id: string }>(
-    'SELECT id FROM approval_requests WHERE id = $1',
-    [requestId]
+    'SELECT id FROM approval_requests WHERE id = $1 AND requester_id = $2',
+    [requestId, requesterId]
   );
   if (!requestRows[0]) return null;
 

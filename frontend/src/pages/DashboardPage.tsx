@@ -7,7 +7,7 @@
  *   3. Recent Activity  — fetches GET /api/auth/audit (hash-chained audit log)
  */
 import { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { authedGet, authedPost, authedDel, ApiError } from '../lib/apiClient';
 import { getAccessToken, clearTokens } from '../lib/auth';
 
@@ -841,9 +841,9 @@ export default function DashboardPage() {
                 Create a demo approval request to try the full workflow:{' '}
                 <strong className="text-ink-primary">create → approve/deny → view receipt</strong>.
                 After voting, the resolved request will appear in{' '}
-                <a href="/demo/dispute" className="text-accent underline underline-offset-2 hover:text-accent-hover">
+                <Link to="/demo/dispute" className="text-accent underline underline-offset-2 hover:text-accent-hover">
                   Dispute Resolution
-                </a>{' '}
+                </Link>{' '}
                 with its cryptographic evidence.
               </p>
 
@@ -871,12 +871,12 @@ export default function DashboardPage() {
                 >
                   {demoStatus.type === 'loading' ? 'Creating…' : '＋ Create demo request'}
                 </button>
-                <a
-                  href="/demo/dispute"
+                <Link
+                  to="/demo/dispute"
                   className="text-sm font-medium text-accent hover:text-accent-hover underline underline-offset-2 transition-colors"
                 >
                   View Dispute Resolution →
-                </a>
+                </Link>
               </div>
 
               <p className="text-xs text-ink-muted">

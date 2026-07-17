@@ -82,16 +82,17 @@ export async function createRequest(
 // ── listResolvedRequests ───────────────────────────────────────────────────
 // M8.4 — Returns the most recent resolved approval requests for the dispute demo.
 // Read-only: no writes.
-export async function listResolvedRequests(limit = 20): Promise<RequestRow[]> {
+export async function listResolvedRequests(requesterId: string, limit = 20): Promise<RequestRow[]> {
   const { rows } = await pool.query<RequestRow>(
     `SELECT id, policy_id, policy_version_snapshot, requester_id,
             action_payload, status, created_at, resolved_at,
             escalated, break_glass, needs_review
      FROM approval_requests
-     WHERE status IN ('approved', 'denied', 'expired')
+     WHERE requester_id = $1
+       AND status IN ('approved', 'denied', 'expired')
      ORDER BY resolved_at DESC NULLS LAST, created_at DESC
-     LIMIT $1`,
-    [limit]
+     LIMIT $2`,
+    [requesterId, limit]
   );
   return rows;
 }
@@ -103,8 +104,8 @@ export async function submitVote(
 ): Promise<SubmitVoteResult> {
   // 1. Fetch the request — must exist and be pending
   const { rows: requestRows } = await pool.query<RequestRow>(
-    'SELECT * FROM approval_requests WHERE id = $1',
-    [requestId]
+    'SELECT * FROM approval_requests WHERE id = $1 AND requester_id = $2',
+    [requestId, approverId]
   );
 
   if (!requestRows[0]) {
@@ -205,12 +206,12 @@ export async function submitVote(
 // a request that has already been break-glassed cannot be done again.
 export async function breakGlass(
   requestId: string,
-  _actorId: string          // reserved for audit ledger (Phase 6)
+  actorId: string
 ): Promise<RequestRow> {
   // 1. Fetch request — must exist
   const { rows: existing } = await pool.query<{ status: string; break_glass: boolean }>(
-    'SELECT status, break_glass FROM approval_requests WHERE id = $1',
-    [requestId]
+    'SELECT status, break_glass FROM approval_requests WHERE id = $1 AND requester_id = $2',
+    [requestId, actorId]
   );
 
   if (!existing[0]) {
@@ -232,9 +233,9 @@ export async function breakGlass(
          break_glass  = true,
          needs_review = true,
          resolved_at  = now()
-     WHERE id = $1
+     WHERE id = $1 AND requester_id = $2
      RETURNING *`,
-    [requestId]
+    [requestId, actorId]
   );
 
   return rows[0];

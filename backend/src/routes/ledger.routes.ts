@@ -25,7 +25,7 @@ router.get(
     const requestId = req.params['requestId'] as string;
 
     try {
-      const receipt = await getReceiptForRequest(requestId);
+      const receipt = await getReceiptForRequest(requestId, req.userId as string);
       if (!receipt) {
         res.status(404).json({ error: 'request not found' });
         return;

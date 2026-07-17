@@ -240,9 +240,9 @@ router.post(
 router.get(
   '/requests',
   requireAuth,
-  async (_req: Request, res: Response): Promise<void> => {
+  async (req: Request, res: Response): Promise<void> => {
     try {
-      const rows = await listResolvedRequests();
+      const rows = await listResolvedRequests(req.userId as string);
       res.json(rows);
     } catch (err) {
       const message = err instanceof Error && err.message ? err.message : 'internal error';
@@ -252,12 +252,14 @@ router.get(
 );
 
 // ── GET /api/approval/requests/pending ────────────────────────────────────
-// Returns all pending approval requests (for the dashboard approvals panel).
+// Returns pending approval requests created by the authenticated user. This
+// demo has no reviewer-assignment model, so creator ownership is the only
+// authorization boundary for a request and its approval workflow.
 
 router.get(
   '/requests/pending',
   requireAuth,
-  async (_req: Request, res: Response): Promise<void> => {
+  async (req: Request, res: Response): Promise<void> => {
     try {
       const { rows } = await pool.query<{
         id: string;
@@ -272,9 +274,11 @@ router.get(
         `SELECT id, policy_id, requester_id, action_payload, status,
                 created_at, escalated, break_glass
          FROM approval_requests
-         WHERE status = 'pending'
+         WHERE requester_id = $1
+           AND status = 'pending'
          ORDER BY created_at DESC
-         LIMIT 50`
+         LIMIT 50`,
+        [req.userId as string]
       );
       res.json(rows);
     } catch (err) {
@@ -285,4 +289,3 @@ router.get(
 );
 
 export default router;
-
