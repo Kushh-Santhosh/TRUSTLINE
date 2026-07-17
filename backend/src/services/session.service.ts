@@ -1,6 +1,7 @@
 /**
  * M4.5 — Session issuance service
  * M4.8 — Refresh token rotation with family-based reuse detection
+ * M6.5 — Audit logging for login events
  *
  * Refresh tokens are stored hashed (SHA-256) in the refresh_tokens table
  * with a family_id for reuse detection (see M3.4 schema).
@@ -9,6 +10,8 @@ import { randomBytes, createHash } from 'crypto';
 import jwt from 'jsonwebtoken';
 import pool from '../db/pool';
 import config from '../lib/config';
+import logger from '../lib/logger';
+import { appendAuditEntry } from './audit.service';
 
 // Access token: 15 minutes
 const ACCESS_TOKEN_TTL = '15m';
@@ -55,6 +58,11 @@ export async function issueSession(userId: string): Promise<SessionTokens> {
 
   // 3. Persist hashed refresh token
   const refreshToken = await issueRefreshToken(userId, familyId);
+
+  // M6.5 — Audit: record login event (fail-open: does not break login if audit is unavailable)
+  appendAuditEntry('login', { userId }).catch((err) =>
+    logger.error({ err, userId }, 'audit: failed to log login event')
+  );
 
   return { accessToken, refreshToken };
 }

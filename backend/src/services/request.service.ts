@@ -4,6 +4,7 @@
  * M5.5 — Delegation expiry check integrated into vote eligibility
  * M5.7 — Break-glass emergency access
  * M6.3 — Server-side Ed25519 signature on every vote
+ * M6.5 — Audit logging for vote and resolution events
  * Creates pending approval requests against a policy,
  * snapshotting the policy version at creation time.
  * Handles vote insertion, status transitions, and emergency overrides.
@@ -12,6 +13,8 @@ import pool from '../db/pool';
 import { evaluateQuorum, type QuorumPolicy, type Vote } from './quorum.service';
 import { hasAnyDelegation, isActiveDelegate } from './delegation.service';
 import { sign } from './signing.service';
+import { appendAuditEntry } from './audit.service';
+import logger from '../lib/logger';
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -137,6 +140,11 @@ export async function submitVote(
     throw err;
   }
 
+  // M6.5 — Audit: record the vote (fail-open)
+  appendAuditEntry('vote', { requestId, approverId, decision, signature }).catch((err) =>
+    logger.error({ err, requestId, approverId }, 'audit: failed to log vote event')
+  );
+
   // 3. Fetch all current votes and the governing policy for quorum evaluation
   const { rows: allVotes } = await pool.query<{ decision: string }>(
     'SELECT decision FROM approval_votes WHERE request_id = $1',
@@ -165,6 +173,11 @@ export async function submitVote(
       [quorumResult, requestId]
     );
     updatedRequest = updatedRows[0];
+
+    // M6.5 — Audit: record resolution (fail-open)
+    appendAuditEntry('request_resolved', { requestId, status: quorumResult }).catch((err) =>
+      logger.error({ err, requestId }, 'audit: failed to log request_resolved event')
+    );
   }
 
   return { vote, request: updatedRequest, quorumResult };
