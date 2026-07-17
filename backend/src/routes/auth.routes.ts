@@ -2,6 +2,7 @@ import { Router, type Request, type Response } from 'express';
 import {
   generateRegistrationOptionsForUser,
   verifyRegistration,
+  generateLoginOptionsForUser,
 } from '../services/webauthn.service';
 
 const router = Router();
@@ -66,6 +67,30 @@ router.post(
         message = err.message;
       }
       const status = message.includes('no pending challenge') ? 400 : 422;
+      res.status(status).json({ error: message });
+    }
+  }
+);
+
+// ── POST /api/auth/login/options ──────────────────────────────────────────
+// Body: { email: string }
+// Returns: PublicKeyCredentialRequestOptionsJSON
+router.post(
+  '/login/options',
+  async (req: Request, res: Response): Promise<void> => {
+    const { email } = req.body as { email?: string };
+
+    if (!email || typeof email !== 'string') {
+      res.status(400).json({ error: 'email is required' });
+      return;
+    }
+
+    try {
+      const options = await generateLoginOptionsForUser(email.trim().toLowerCase());
+      res.json(options);
+    } catch (err) {
+      const message = err instanceof Error && err.message ? err.message : 'internal error';
+      const status = message.includes('no credentials') ? 404 : 500;
       res.status(status).json({ error: message });
     }
   }

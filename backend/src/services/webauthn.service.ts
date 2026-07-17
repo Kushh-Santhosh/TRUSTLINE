@@ -5,9 +5,11 @@
 import {
   generateRegistrationOptions,
   verifyRegistrationResponse,
+  generateAuthenticationOptions,
 } from '@simplewebauthn/server';
 import type {
   PublicKeyCredentialCreationOptionsJSON,
+  PublicKeyCredentialRequestOptionsJSON,
   RegistrationResponseJSON,
 } from '@simplewebauthn/server';
 import pool from '../db/pool';
@@ -114,4 +116,46 @@ export async function verifyRegistration(
 
   // 5. Clear challenge — one-time use
   challengeStore.delete(email);
+}
+
+// ── Login challenge store (separate from registration challenge store) ─────
+// Maps email → base64url-encoded authentication challenge.
+const loginChallengeStore = new Map<string, string>();
+
+export { loginChallengeStore };
+
+// ── generateLoginOptionsForUser ────────────────────────────────────────────
+export async function generateLoginOptionsForUser(
+  email: string
+): Promise<PublicKeyCredentialRequestOptionsJSON> {
+  // 1. Look up user
+  const { rows: users } = await pool.query<{ id: string }>(
+    'SELECT id FROM users WHERE email = $1',
+    [email]
+  );
+  if (!users[0]) {
+    // Don't reveal whether the user exists — generic error
+    throw new Error('no credentials found for this email');
+  }
+
+  // 2. Load all registered credentials for this user
+  const { rows: creds } = await pool.query<{ credential_id: string }>(
+    'SELECT credential_id FROM webauthn_credentials WHERE user_id = $1',
+    [users[0].id]
+  );
+  if (creds.length === 0) {
+    throw new Error('no credentials found for this email');
+  }
+
+  // 3. Generate authentication options
+  const options = await generateAuthenticationOptions({
+    rpID: RP_ID,
+    allowCredentials: creds.map((c) => ({ id: c.credential_id })),
+    userVerification: 'preferred',
+  });
+
+  // 4. Store challenge for verification in M4.5
+  loginChallengeStore.set(email, options.challenge);
+
+  return options;
 }
