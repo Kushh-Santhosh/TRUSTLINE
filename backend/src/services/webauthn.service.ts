@@ -87,8 +87,9 @@ export async function verifyRegistration(
   const verification = await verifyRegistrationResponse({
     response,
     expectedChallenge,
-    // The browser sends the origin of the page where the ceremony ran
-    expectedOrigin: config.FRONTEND_ORIGIN,
+    // The browser sends the origin of the page where the ceremony ran.
+    // SimpleWebAuthn accepts an array, which keeps both local Vite ports valid.
+    expectedOrigin: config.FRONTEND_ORIGINS,
     expectedRPID: RP_ID,
   });
 
@@ -212,7 +213,7 @@ export async function verifyLogin(
   const verification = await verifyAuthenticationResponse({
     response,
     expectedChallenge,
-    expectedOrigin: config.FRONTEND_ORIGIN,
+    expectedOrigin: config.FRONTEND_ORIGINS,
     expectedRPID: RP_ID,
     credential: {
       id: credentialId,
