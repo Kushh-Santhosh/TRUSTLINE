@@ -3,6 +3,7 @@
  * M5.2 — Approval request creation
  * M5.4 — Vote submission
  * M5.5 — Delegation management
+ * M5.7 — Break-glass emergency access
  * All endpoints protected by requireAuth middleware.
  */
 import { Router, type Request, type Response } from 'express';
@@ -13,7 +14,7 @@ import {
   listPolicies,
   type CreatePolicyData,
 } from '../services/policy.service';
-import { createRequest, submitVote } from '../services/request.service';
+import { createRequest, submitVote, breakGlass } from '../services/request.service';
 import { createDelegation } from '../services/delegation.service';
 
 const router = Router();
@@ -208,6 +209,30 @@ router.post(
     } catch (err) {
       const message = err instanceof Error && err.message ? err.message : 'internal error';
       const status = message.includes('must be') ? 400 : 500;
+      res.status(status).json({ error: message });
+    }
+  }
+);
+
+// ── POST /api/approval/requests/:id/break-glass ───────────────────────────────────
+// Returns: 200 + updated request row
+// status='approved', break_glass=true, needs_review=true, resolved_at set
+router.post(
+  '/requests/:id/break-glass',
+  requireAuth,
+  async (req: Request, res: Response): Promise<void> => {
+    const requestId = req.params['id'] as string;
+    const actorId   = req.userId as string;
+
+    try {
+      const request = await breakGlass(requestId, actorId);
+      res.json(request);
+    } catch (err) {
+      const message = err instanceof Error && err.message ? err.message : 'internal error';
+      const status =
+        message === 'request not found'                       ? 404
+        : message.includes('already')                         ? 409
+        : 500;
       res.status(status).json({ error: message });
     }
   }

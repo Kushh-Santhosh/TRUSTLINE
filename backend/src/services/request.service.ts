@@ -2,9 +2,10 @@
  * M5.2 — Approval request service
  * M5.4 — Vote submission with quorum evaluation
  * M5.5 — Delegation expiry check integrated into vote eligibility
+ * M5.7 — Break-glass emergency access
  * Creates pending approval requests against a policy,
  * snapshotting the policy version at creation time.
- * Handles vote insertion and request status transitions.
+ * Handles vote insertion, status transitions, and emergency overrides.
  */
 import pool from '../db/pool';
 import { evaluateQuorum, type QuorumPolicy, type Vote } from './quorum.service';
@@ -21,6 +22,11 @@ export interface RequestRow {
   status: 'pending' | 'approved' | 'denied' | 'expired';
   created_at: Date;
   resolved_at: Date | null;
+  // M5.6
+  escalated: boolean;
+  // M5.7
+  break_glass: boolean;
+  needs_review: boolean;
 }
 
 export interface VoteRow {
@@ -156,4 +162,45 @@ export async function submitVote(
   }
 
   return { vote, request: updatedRequest, quorumResult };
+}
+
+// ── breakGlass ──────────────────────────────────────────────────────────────
+// Force-approves a pending request, setting break_glass=true and
+// needs_review=true for mandatory post-hoc audit. Idempotent guard:
+// a request that has already been break-glassed cannot be done again.
+export async function breakGlass(
+  requestId: string,
+  _actorId: string          // reserved for audit ledger (Phase 6)
+): Promise<RequestRow> {
+  // 1. Fetch request — must exist
+  const { rows: existing } = await pool.query<{ status: string; break_glass: boolean }>(
+    'SELECT status, break_glass FROM approval_requests WHERE id = $1',
+    [requestId]
+  );
+
+  if (!existing[0]) {
+    throw new Error('request not found');
+  }
+
+  // 2. Guard: cannot break-glass an already-resolved or already-broken-glass request
+  if (existing[0].break_glass) {
+    throw new Error('break-glass already applied to this request');
+  }
+  if (existing[0].status !== 'pending') {
+    throw new Error(`request is already ${existing[0].status}`);
+  }
+
+  // 3. Force-approve with break_glass + needs_review flags
+  const { rows } = await pool.query<RequestRow>(
+    `UPDATE approval_requests
+     SET status       = 'approved',
+         break_glass  = true,
+         needs_review = true,
+         resolved_at  = now()
+     WHERE id = $1
+     RETURNING *`,
+    [requestId]
+  );
+
+  return rows[0];
 }
