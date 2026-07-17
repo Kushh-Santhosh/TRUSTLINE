@@ -1,4 +1,23 @@
+# TrustLine — Full Docker Compose stack (M10.1)
+# Runs: postgres · redis · backend (API) · frontend (nginx SPA)
+#
+# Quick start:
+#   cp backend/.env.example .env          # set JWT_SECRET, JWT_REFRESH_SECRET
+#   docker compose up --build
+#
+# Migrate (first time or after schema changes):
+#   docker compose exec backend npm run migrate:up
+#
+# Seed demo data:
+#   docker compose exec backend npm run seed
+#
+# Frontend:  http://localhost:5173
+# Backend:   http://localhost:4000
+# Health:    http://localhost:4000/health
+
 services:
+
+  # ── PostgreSQL ─────────────────────────────────────────────────────────────
   postgres:
     image: postgres:16
     restart: unless-stopped
@@ -10,12 +29,90 @@ services:
       POSTGRES_DB: trustline
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d trustline"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - trustline
 
+  # ── Redis ──────────────────────────────────────────────────────────────────
   redis:
     image: redis:7
     restart: unless-stopped
     ports:
       - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - trustline
 
+  # ── Backend (Node/Express API) ─────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      # PostgreSQL — use service name as hostname inside Docker network
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/trustline
+      # Redis — use service name as hostname
+      REDIS_URL: redis://redis:6379
+      # JWT secrets — override in .env or via environment
+      JWT_SECRET: ${JWT_SECRET:-change-me-to-a-long-random-secret-for-docker}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-change-me-to-a-different-long-random-secret-for-docker}
+      # Server
+      PORT: 4000
+      NODE_ENV: production
+      # CORS — allow frontend container
+      FRONTEND_ORIGIN: http://localhost:5173
+      # WebAuthn — use localhost for local dev; override with real domain in production
+      WEBAUTHN_RP_ID: localhost
+      # Logging
+      LOG_LEVEL: info
+    networks:
+      - trustline
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:4000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # ── Frontend (Vite + nginx) ────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # Baked into the JS bundle at build time — must match the backend port
+        VITE_API_URL: http://localhost:4000
+    restart: unless-stopped
+    ports:
+      - "5173:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - trustline
+
+# ── Volumes ────────────────────────────────────────────────────────────────
 volumes:
   postgres_data:
+
+# ── Networks ───────────────────────────────────────────────────────────────
+networks:
+  trustline:
+    driver: bridge
