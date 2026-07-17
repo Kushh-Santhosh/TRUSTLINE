@@ -1,6 +1,7 @@
 /**
  * M5.1 — Approval policy routes
  * M5.2 — Approval request creation
+ * M5.4 — Vote submission
  * All endpoints protected by requireAuth middleware.
  */
 import { Router, type Request, type Response } from 'express';
@@ -11,7 +12,7 @@ import {
   listPolicies,
   type CreatePolicyData,
 } from '../services/policy.service';
-import { createRequest } from '../services/request.service';
+import { createRequest, submitVote } from '../services/request.service';
 
 const router = Router();
 
@@ -125,6 +126,45 @@ router.post(
     } catch (err) {
       const message = err instanceof Error && err.message ? err.message : 'internal error';
       const status = message === 'policy not found' ? 404 : 500;
+      res.status(status).json({ error: message });
+    }
+  }
+);
+
+// ── POST /api/approval/requests/:id/votes ────────────────────────────────────
+// Body: { decision: 'approve' | 'deny', signature: string }
+// Returns: { vote, request, quorumResult }
+// approverId = req.userId (set by requireAuth)
+router.post(
+  '/requests/:id/votes',
+  requireAuth,
+  async (req: Request, res: Response): Promise<void> => {
+    const requestId = req.params['id'] as string;
+    const { decision, signature } = req.body as {
+      decision?: string;
+      signature?: string;
+    };
+
+    if (decision !== 'approve' && decision !== 'deny') {
+      res.status(400).json({ error: 'decision must be "approve" or "deny"' });
+      return;
+    }
+    if (!signature || typeof signature !== 'string') {
+      res.status(400).json({ error: 'signature is required' });
+      return;
+    }
+
+    const approverId = req.userId as string;
+
+    try {
+      const result = await submitVote(requestId, approverId, decision, signature);
+      res.status(201).json(result);
+    } catch (err) {
+      const message = err instanceof Error && err.message ? err.message : 'internal error';
+      const status =
+        message === 'request not found' ? 404
+        : message.includes('already') ? 409
+        : 500;
       res.status(status).json({ error: message });
     }
   }
