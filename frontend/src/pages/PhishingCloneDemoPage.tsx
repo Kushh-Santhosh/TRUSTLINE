@@ -14,7 +14,7 @@
  * No backend writes. No valid session can be obtained through this page.
  */
 import { useState, type FormEvent } from 'react';
-import { startAuthentication } from '@simplewebauthn/browser';
+import { startAuthentication, type PublicKeyCredentialRequestOptionsJSON } from '@simplewebauthn/browser';
 import apiClient from '../lib/apiClient';
 
 type DemoPhase = 'idle' | 'attempting' | 'failed' | 'explaining';
@@ -33,7 +33,7 @@ export default function PhishingCloneDemoPage() {
       // Attempts the real WebAuthn flow — but the browser/authenticator
       // will refuse because this origin has no registered credential
       // matching the stored credential (or no assertion is available).
-      const options = await apiClient.post<Parameters<typeof startAuthentication>[0]>(
+      const options = await apiClient.post<PublicKeyCredentialRequestOptionsJSON>(
         '/api/auth/login/options',
         { email: email.trim().toLowerCase() }
       );

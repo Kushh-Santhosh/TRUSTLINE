@@ -9,7 +9,7 @@
  */
 import { useState, useMemo, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { startAuthentication } from '@simplewebauthn/browser';
+import { startAuthentication, type PublicKeyCredentialRequestOptionsJSON } from '@simplewebauthn/browser';
 import apiClient, { ApiError } from '../lib/apiClient';
 import { setTokens } from '../lib/auth';
 import PushSimulator from '../components/PushSimulator';
@@ -22,7 +22,6 @@ export default function LoginPage() {
   const [phase, setPhase]               = useState<Phase>('email');
   const [pendingToken, setPendingToken] = useState('');
   const [totpCode, setTotpCode]         = useState('');
-  const [numberMatched, setNumberMatched] = useState(false);
   const [status, setStatus]             = useState<Status>({ type: 'idle' });
   const navigate = useNavigate();
 
@@ -35,7 +34,7 @@ export default function LoginPage() {
     setStatus({ type: 'loading' });
 
     try {
-      const options = await apiClient.post<Parameters<typeof startAuthentication>[0]>(
+      const options = await apiClient.post<PublicKeyCredentialRequestOptionsJSON>(
         '/api/auth/login/options',
         { email: email.trim().toLowerCase() }
       );
@@ -70,7 +69,6 @@ export default function LoginPage() {
   // ── Phase 2 (M8.1): Number-match result ──────────────────────────────────
   function handleNumberMatch(correct: boolean) {
     if (correct) {
-      setNumberMatched(true);
       setPhase('totp');
       setStatus({ type: 'idle' });
     } else {
@@ -78,7 +76,6 @@ export default function LoginPage() {
       // Reset to email phase after a short delay so the user sees the red state first
       setTimeout(() => {
         setPhase('email');
-        setNumberMatched(false);
         setStatus({ type: 'idle' });
       }, 1800);
     }

@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { startRegistration } from '@simplewebauthn/browser';
+import { startRegistration, type PublicKeyCredentialCreationOptionsJSON } from '@simplewebauthn/browser';
 import apiClient, { ApiError } from '../lib/apiClient';
 
 type Status = { type: 'idle' | 'loading' | 'success' | 'error'; message?: string };
@@ -15,7 +15,7 @@ export default function RegisterPage() {
 
     try {
       // 1. Get registration options from server
-      const options = await apiClient.post<Parameters<typeof startRegistration>[0]>(
+      const options = await apiClient.post<PublicKeyCredentialCreationOptionsJSON>(
         '/api/auth/register/options',
         { email: email.trim().toLowerCase() }
       );

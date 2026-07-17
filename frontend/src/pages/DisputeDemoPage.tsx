@@ -61,10 +61,7 @@ function shortHash(h: string | null) {
   return h.slice(0, 12) + '…' + h.slice(-6);
 }
 
-function authHeader() {
-  const t = getAccessToken();
-  return t ? { Authorization: `Bearer ${t}` } : {};
-}
+
 
 // ── Component ─────────────────────────────────────────────────────────────
 
@@ -113,9 +110,12 @@ export default function DisputeDemoPage() {
     setReceiptLoading(true);
     setReceiptErr('');
     try {
+      const token = getAccessToken();
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
       const data = await fetch(
         `/api/ledger/receipt/${selected.id}`,
-        { headers: { 'Content-Type': 'application/json', ...authHeader() } }
+        { headers }
       ).then(async (r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json() as Promise<Receipt>;

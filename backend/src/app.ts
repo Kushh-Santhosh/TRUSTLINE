@@ -20,9 +20,24 @@ app.use(express.json());
 // CORS — allow frontend origin from validated config
 app.use(cors({ origin: config.FRONTEND_ORIGIN, credentials: true }));
 
+import pool from './db/pool';
+
 // Health check — do not remove
-app.get('/health', (_req, res) => {
-  res.json({ status: 'ok' });
+// Returns { status: 'ok', db: 'ok' } when fully healthy.
+// Returns { status: 'ok', db: 'error', dbError: '...' } when DB is unreachable.
+// This makes dependency failures visible without crashing the server.
+app.get('/health', async (_req, res) => {
+  let db: 'ok' | 'error' = 'ok';
+  let dbError: string | undefined;
+
+  try {
+    await pool.query('SELECT 1');
+  } catch (err) {
+    db = 'error';
+    dbError = err instanceof Error ? err.message : String(err);
+  }
+
+  res.json({ status: 'ok', db, ...(dbError ? { dbError } : {}) });
 });
 
 // API routers

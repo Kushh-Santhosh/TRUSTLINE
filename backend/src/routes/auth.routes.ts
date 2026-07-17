@@ -10,10 +10,38 @@ import { issueSession, rotateRefreshToken } from '../services/session.service';
 import { generateSecretForUser, verifyCode } from '../services/totp.service';
 import { scoreLoginRisk, recordStepUpAttempt } from '../services/risk.service';
 import config from '../lib/config';
+import logger from '../lib/logger';
 
 // Short-lived pending token TTL (5 minutes) — bridges WebAuthn success → TOTP step-up
 const STEP_UP_TTL = '5m';
 const STEP_UP_PURPOSE = 'step_up' as const;
+
+// ── Structured error logger ────────────────────────────────────────────────
+function logAuthError(endpoint: string, err: unknown, ctx: Record<string, unknown> = {}): string {
+  const isError  = err instanceof Error;
+  const message  = isError ? err.message : String(err);
+  const code     = (err && typeof err === 'object' && 'code' in err)
+    ? String((err as Record<string, unknown>).code)
+    : undefined;
+  const isConnRefused = code === 'ECONNREFUSED' || message.includes('ECONNREFUSED');
+
+  logger.error(
+    {
+      endpoint,
+      errMessage: message,
+      errCode:    code,
+      errStack:   isError ? err.stack : undefined,
+      ...(isConnRefused ? { hint: 'PostgreSQL is not reachable — run: docker compose up -d postgres redis' } : {}),
+      ...ctx,
+    },
+    isConnRefused
+      ? `[auth] ${endpoint}: database not reachable (ECONNREFUSED) — start PostgreSQL first`
+      : `[auth] ${endpoint}: unexpected error`
+  );
+
+  // Return a user-safe message (include original for dev; redact in prod if needed)
+  return isConnRefused ? `database not reachable — is PostgreSQL running?` : message;
+}
 
 const router = Router();
 
@@ -24,6 +52,7 @@ router.post(
   '/register/options',
   async (req: Request, res: Response): Promise<void> => {
     const { email } = req.body as { email?: string };
+    logger.info({ endpoint: 'register/options', email }, '[auth] register/options: incoming');
 
     if (!email || typeof email !== 'string') {
       res.status(400).json({ error: 'email is required' });
@@ -31,15 +60,12 @@ router.post(
     }
 
     try {
+      logger.info({ email }, '[auth] register/options: calling generateRegistrationOptionsForUser');
       const options = await generateRegistrationOptionsForUser(email.trim().toLowerCase());
+      logger.info({ email, challengeLen: options.challenge.length }, '[auth] register/options: success');
       res.json(options);
     } catch (err) {
-      let message = 'internal error';
-      if (err instanceof Error && err.message) {
-        message = err.message;
-      } else if (err && typeof err === 'object' && 'code' in err) {
-        message = String((err as Record<string, unknown>).code);
-      }
+      const message = logAuthError('register/options', err, { email });
       res.status(500).json({ error: message });
     }
   }
@@ -55,6 +81,7 @@ router.post(
       email?: string;
       response?: unknown;
     };
+    logger.info({ endpoint: 'register/verify', email }, '[auth] register/verify: incoming');
 
     if (!email || typeof email !== 'string') {
       res.status(400).json({ error: 'email is required' });
@@ -66,16 +93,17 @@ router.post(
     }
 
     try {
+      logger.info({ email }, '[auth] register/verify: calling verifyRegistration');
       await verifyRegistration(
         email.trim().toLowerCase(),
         response as Parameters<typeof verifyRegistration>[1]
       );
+      logger.info({ email }, '[auth] register/verify: success');
       res.json({ verified: true });
     } catch (err) {
-      let message = 'verification failed';
-      if (err instanceof Error && err.message) {
-        message = err.message;
-      }
+      const isError = err instanceof Error;
+      const message = isError && err.message ? err.message : 'verification failed';
+      logAuthError('register/verify', err, { email });
       const status = message.includes('no pending challenge') ? 400 : 422;
       res.status(status).json({ error: message });
     }
@@ -89,6 +117,7 @@ router.post(
   '/login/options',
   async (req: Request, res: Response): Promise<void> => {
     const { email } = req.body as { email?: string };
+    logger.info({ endpoint: 'login/options', email }, '[auth] login/options: incoming');
 
     if (!email || typeof email !== 'string') {
       res.status(400).json({ error: 'email is required' });
@@ -96,11 +125,14 @@ router.post(
     }
 
     try {
+      logger.info({ email }, '[auth] login/options: calling generateLoginOptionsForUser');
       const options = await generateLoginOptionsForUser(email.trim().toLowerCase());
+      logger.info({ email, challengeLen: options.challenge.length }, '[auth] login/options: success');
       res.json(options);
     } catch (err) {
-      const message = err instanceof Error && err.message ? err.message : 'internal error';
-      const status = message.includes('no credentials') ? 404 : 500;
+      const raw = err instanceof Error && err.message ? err.message : 'internal error';
+      const message = logAuthError('login/options', err, { email });
+      const status = raw.includes('no credentials') ? 404 : 500;
       res.status(status).json({ error: message });
     }
   }
@@ -130,14 +162,20 @@ router.post(
     const ip = req.ip;
     const userAgent = req.headers['user-agent'] as string | undefined;
 
+    logger.info({ endpoint: 'login/verify', email }, '[auth] login/verify: incoming');
+
     try {
+      logger.info({ email }, '[auth] login/verify: calling verifyLogin');
       const userId = await verifyLogin(
         email.trim().toLowerCase(),
         response as Parameters<typeof verifyLogin>[1]
       );
+      logger.info({ email, userId }, '[auth] login/verify: passkey verified');
 
       // M7.3 — Score the login risk before deciding whether to issue tokens
+      logger.info({ userId }, '[auth] login/verify: scoring risk');
       const { score } = await scoreLoginRisk(userId, ip, userAgent);
+      logger.info({ userId, score }, '[auth] login/verify: risk score');
 
       if (score === 'medium' || score === 'high') {
         // Issue a short-lived pending token so the step-up endpoint
@@ -147,15 +185,20 @@ router.post(
           config.JWT_SECRET,
           { expiresIn: STEP_UP_TTL }
         );
+        logger.info({ userId, score }, '[auth] login/verify: step-up required');
         res.json({ stepUpRequired: true, method: 'totp', pendingToken });
         return;
       }
 
       // Low risk — issue full session immediately
+      logger.info({ userId }, '[auth] login/verify: issuing session (low risk)');
       const tokens = await issueSession(userId, ip, userAgent);
+      logger.info({ userId }, '[auth] login/verify: session issued');
       res.json(tokens);
     } catch (err) {
-      const message = err instanceof Error && err.message ? err.message : 'verification failed';
+      const isError = err instanceof Error;
+      const message = isError && err.message ? err.message : 'verification failed';
+      logAuthError('login/verify', err, { email });
       const status = message.includes('no pending') ? 400 : 401;
       res.status(status).json({ error: message });
     }
