@@ -9,11 +9,14 @@
 
 TrustLine is a TypeScript application that combines passwordless sign-in, adaptive step-up authentication, approval decisions, and cryptographic evidence in one demonstrable workflow. It is designed for a hackathon and portfolio setting: the implementation favours inspectable security controls, clear user flows, and verifiable records over product claims that are not yet built.
 
-| Enterprise Identity & Approval Security | Passwordless Authentication | Cryptographic Approval Ledger |
-| --- | --- | --- |
-| Policy-based requests, quorum evaluation, delegation, escalation, and break-glass routes | WebAuthn passkeys with platform authenticators | Ed25519-signed votes and SHA-256 hash-linked audit entries |
-| Tamper-Evident Audit Trail | Dispute Resolution | Attack Simulation Environment |
-| Independent chain verifier and user-scoped activity | Resolved-request receipts with signatures, public keys, and related audit entries | MFA-fatigue, refresh-token replay, phishing-clone, and number-matching demonstrations |
+| Capability | Implementation |
+| --- | --- |
+| **Enterprise Identity & Approval Security** | Policy-based requests, quorum evaluation, delegation, escalation, and break-glass routes. |
+| **Passwordless Authentication** | WebAuthn passkeys with platform authenticators and adaptive TOTP step-up. |
+| **Cryptographic Approval Ledger** | Ed25519-signed votes and SHA-256 hash-linked audit entries. |
+| **Tamper-Evident Audit Trail** | Independent chain verifier and user-scoped dashboard activity. |
+| **Dispute Resolution** | Resolved-request receipts with signatures, public keys, and related audit entries. |
+| **Judge Mode & Attack Simulations** | API-backed defence demos plus clearly labelled mock trust and attack showcases. |
 
 ---
 
@@ -98,9 +101,31 @@ It demonstrates evidence review for a resolved request. It is not a full case-ma
 
 | Demonstration | What it shows |
 | --- | --- |
-| **Attack Demo** | Simulates repeated invalid step-up attempts to show rate limiting, and refresh-token replay to show family revocation. |
+| **Attack Demo** | Calls the real step-up and refresh endpoints to demonstrate rate limiting and refresh-token-family replay revocation. It is a controlled demo, not an attack tool. |
 | **Phishing Clone Demo** | A clearly labelled simulated clone that invokes WebAuthn to explain that passkeys are origin-bound and do not reveal a reusable password. The page does not create an authenticated session. |
 | **Push Simulator** | A local, number-matching second-device interaction used in the login demonstration. It models a confirmation UX; it does not send a notification. |
+
+### Judge Mode, Adaptive Trust Engine, and Trust Timeline
+
+The Dashboard includes **Judge Mode**, a guided, one-click walkthrough for presenting the project. It composes three reusable browser components:
+
+- **Adaptive Trust Engine** — selectable high, medium, and low trust-score scenarios with explainability factors and an outcome card.
+- **Trust Timeline** — a visual sequence of authentication, trust, approval, and receipt events.
+- **Attack Simulation** — animated phishing, new-device, session-hijack, and replay scenarios with signal severities and outcomes.
+
+These components are deliberately marked **mock/demo only** in source. They use built-in browser data, do not call the backend, do not calculate a live trust score, and do not enforce any security decision. They are presentation tooling that illustrates how the currently implemented controls could be surfaced in a richer product.
+
+### Implementation Status
+
+| Area | Status | Notes |
+| --- | --- | --- |
+| Passkey registration and login | Implemented | WebAuthn options and verification are API-backed. |
+| TOTP enrollment and adaptive step-up | Implemented | Risk uses IP and user-agent history; no recovery codes. |
+| Sessions and refresh replay defence | Implemented | API-backed session listing, revocation, rotation, and family invalidation. |
+| Approval, signing, receipt, and audit evidence | Implemented | Owner-scoped workflow with Ed25519 vote signatures and receipts. |
+| Dispute Resolution screen | Implemented | API-backed resolved-request picker and receipt viewer. |
+| MFA-fatigue and token-replay demo | Implemented demonstration | Intentionally exercises the real local API controls. |
+| Judge Mode, Trust Engine, Timeline, Attack Simulation | Simulated | Browser-only mock data; no API calls or live enforcement. |
 
 ## Architecture
 
@@ -117,6 +142,8 @@ flowchart LR
   API --> Signing[Ed25519 signing service]
   Signing --> PG
   Audit --> PG
+  Browser --> Judge[Judge Mode / trust & attack showcase]
+  Judge -. mock data only .-> Browser
 ```
 
 PostgreSQL is the active persistence layer for users, credentials, sessions, policies, requests, votes, signing keys, and audit entries. Redis is provisioned and required by configuration in the Docker stack; the current challenge and rate-limit stores are in-memory, so Redis is not yet used as their backing store.
@@ -204,7 +231,7 @@ trustline/
 └── start-demo.sh            Stack startup, migrations, and demo seed script
 ```
 
-There are no top-level `ledger/` or `security/` directories: those concerns live in `backend/src/services/audit.service.ts`, `signing.service.ts`, `keys.service.ts`, `webauthn.service.ts`, and related middleware/routes.
+The reusable dashboard showcase components are `AdaptiveTrustEngine.tsx`, `TrustTimeline.tsx`, `AttackSimulation.tsx`, and `JudgeMode.tsx`; they are explicitly browser-only mock demonstrations. There are no top-level `ledger/` or `security/` directories: those concerns live in `backend/src/services/audit.service.ts`, `signing.service.ts`, `keys.service.ts`, `webauthn.service.ts`, and related middleware/routes.
 
 ## Technology Stack
 
@@ -386,6 +413,7 @@ npm run verify-chain
 7. Open **Dispute Resolution**, choose the resolved request, and inspect the receipt’s signatures, keys, and audit hashes.
 8. Visit **Attack Demo** to observe MFA-fatigue rate limiting and refresh-token replay revocation.
 9. Visit **Phishing Clone Demo** to review the origin-bound passkey explanation.
+10. On the Dashboard, run **Judge Mode** for the guided mock-data trust, timeline, and attack showcase. It does not modify the backend or the authenticated workflow.
 
 ## Screenshots
 
@@ -401,6 +429,7 @@ Screenshots are intentionally not checked into this repository yet. Add captures
 | Dispute | `![Dispute resolution](docs/screenshots/dispute.png)` — evidence review for a resolved request. |
 | Attack Demo | `![Attack demo](docs/screenshots/attack-demo.png)` — rate-limit and replay simulations. |
 | Phishing Demo | `![Phishing demo](docs/screenshots/phishing-demo.png)` — clearly labelled phishing-resistance simulation. |
+| Judge Mode | `![Judge Mode](docs/screenshots/judge-mode.png)` — mock-data walkthrough of trust, timeline, and attack concepts. |
 
 ## Performance and Operational Characteristics
 
@@ -409,6 +438,7 @@ Screenshots are intentionally not checked into this repository yet. Add captures
 - Audit appends use database transactions and lock the latest chain entry to maintain order.
 - The escalation job runs every 30 seconds in the API process.
 - Challenge storage and step-up rate limiting are in memory, so they reset on restart and are not suitable for multi-instance deployment without a shared store.
+- Judge Mode and its trust/attack visualizations run entirely in the browser with local mock data; they add no API or database load.
 
 ## Future Roadmap
 
@@ -418,6 +448,7 @@ Screenshots are intentionally not checked into this repository yet. Add captures
 - Add stricter audit-write policies, external ledger anchoring, and operational monitoring.
 - Introduce HttpOnly-cookie session handling and production secret management.
 - Add signed receipt export and end-to-end browser test coverage.
+- Connect Judge Mode, trust scoring, timeline events, and attack visualizations to evidence-backed backend data once the underlying policy signals exist.
 
 ## Contributors
 
