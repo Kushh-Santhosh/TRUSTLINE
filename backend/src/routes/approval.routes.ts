@@ -17,6 +17,7 @@ import {
 } from '../services/policy.service';
 import { createRequest, submitVote, breakGlass, listResolvedRequests } from '../services/request.service';
 import { createDelegation } from '../services/delegation.service';
+import logger from '../lib/logger';
 
 const router = Router();
 
@@ -158,6 +159,7 @@ router.post(
       const result = await submitVote(requestId, approverId, decision);
       res.status(201).json(result);
     } catch (err) {
+      logger.error({ err, requestId, approverId, decision }, 'approval vote failed');
       const message = err instanceof Error && err.message ? err.message : 'internal error';
       const status =
         message === 'request not found' ? 404

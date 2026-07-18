@@ -42,7 +42,12 @@ beforeAll(() => {
 
 vi.mock('./keys.service', () => ({
   getEncryptedPrivateKey: vi.fn().mockResolvedValue('MOCK_ENCRYPTED_KEY'),
-  decryptPrivateKey:      vi.fn().mockImplementation(() => PRIVATE_KEY_PEM),
+  decryptPrivateKeyWithMigration: vi.fn().mockImplementation(() => ({
+    privateKeyPem: PRIVATE_KEY_PEM,
+    needsReencryption: false,
+  })),
+  encryptPrivateKey: vi.fn(),
+  updateEncryptedPrivateKey: vi.fn(),
   getPublicKey:           vi.fn().mockResolvedValue(() => PUBLIC_KEY_PEM),
 }));
 

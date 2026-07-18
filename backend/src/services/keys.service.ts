@@ -2,7 +2,9 @@
  * M6.1 — Keys service
  * Generates Ed25519 signing keypairs for approvers.
  * Public key stored in plaintext PEM.
- * Private key encrypted with AES-256-GCM, key derived from config.JWT_SECRET.
+ * Private key encrypted with AES-256-GCM using the configured signing-key
+ * encryption secret. Existing development records can be migrated from a
+ * configured previous secret on their next successful use.
  */
 import { createHash, generateKeyPairSync, createCipheriv, createDecipheriv, randomBytes } from 'crypto';
 import pool from '../db/pool';
@@ -10,9 +12,9 @@ import config from '../lib/config';
 
 // ── Encryption helpers ────────────────────────────────────────────────────
 
-// Derive a 32-byte AES key from JWT_SECRET via SHA-256 (hackathon scope)
-function deriveEncryptionKey(): Buffer {
-  return createHash('sha256').update(config.JWT_SECRET).digest();
+// Derive a 32-byte AES key from a configured encryption secret via SHA-256.
+function deriveEncryptionKey(secret = config.SIGNING_KEY_ENCRYPTION_SECRET): Buffer {
+  return createHash('sha256').update(secret).digest();
 }
 
 // Encrypt a string with AES-256-GCM; returns "iv:tag:ciphertext" in hex
@@ -31,9 +33,9 @@ export function encryptPrivateKey(plaintext: string): string {
 }
 
 // Decrypt a string produced by encryptPrivateKey
-export function decryptPrivateKey(encrypted: string): string {
+function decryptWithSecret(encrypted: string, secret: string): string {
   const [ivHex, tagHex, ciphertextHex] = encrypted.split(':');
-  const key = deriveEncryptionKey();
+  const key = deriveEncryptionKey(secret);
   const iv = Buffer.from(ivHex, 'hex');
   const tag = Buffer.from(tagHex, 'hex');
   const ciphertext = Buffer.from(ciphertextHex, 'hex');
@@ -42,6 +44,30 @@ export function decryptPrivateKey(encrypted: string): string {
   decipher.setAuthTag(tag);
 
   return Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString('utf8');
+}
+
+// Decrypt using the active signing-key encryption secret.
+export function decryptPrivateKey(encrypted: string): string {
+  return decryptWithSecret(encrypted, config.SIGNING_KEY_ENCRYPTION_SECRET);
+}
+
+export function decryptPrivateKeyWithMigration(encrypted: string): {
+  privateKeyPem: string;
+  needsReencryption: boolean;
+} {
+  try {
+    return { privateKeyPem: decryptPrivateKey(encrypted), needsReencryption: false };
+  } catch (primaryError) {
+    for (const previousSecret of config.SIGNING_KEY_PREVIOUS_ENCRYPTION_SECRETS) {
+      if (previousSecret === config.SIGNING_KEY_ENCRYPTION_SECRET) continue;
+      try {
+        return { privateKeyPem: decryptWithSecret(encrypted, previousSecret), needsReencryption: true };
+      } catch {
+        // Try the next explicitly configured legacy secret without logging it.
+      }
+    }
+    throw primaryError;
+  }
 }
 
 // ── generateKeypairForUser ────────────────────────────────────────────────
@@ -84,4 +110,11 @@ export async function getEncryptedPrivateKey(userId: string): Promise<string | n
     [userId]
   );
   return rows[0]?.encrypted_private_key ?? null;
+}
+
+export async function updateEncryptedPrivateKey(userId: string, encryptedPrivateKey: string): Promise<void> {
+  await pool.query(
+    'UPDATE signing_keys SET encrypted_private_key = $1 WHERE user_id = $2',
+    [encryptedPrivateKey, userId]
+  );
 }

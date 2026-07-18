@@ -11,7 +11,14 @@
  * Signature encoding: base64 (URL-unsafe) — compact, suitable for DB storage.
  */
 import { sign as cryptoSign, verify as cryptoVerify } from 'crypto';
-import { getEncryptedPrivateKey, getPublicKey, decryptPrivateKey } from './keys.service';
+import {
+  decryptPrivateKeyWithMigration,
+  encryptPrivateKey,
+  getEncryptedPrivateKey,
+  getPublicKey,
+  updateEncryptedPrivateKey,
+} from './keys.service';
+import logger from '../lib/logger';
 
 // ── Canonical JSON ────────────────────────────────────────────────────────
 
@@ -33,7 +40,12 @@ export async function sign(userId: string, payload: object): Promise<string> {
   if (!encryptedPrivateKey) {
     throw new Error(`no signing key found for user ${userId}`);
   }
-  const privateKeyPem = decryptPrivateKey(encryptedPrivateKey);
+  const { privateKeyPem, needsReencryption } = decryptPrivateKeyWithMigration(encryptedPrivateKey);
+  if (needsReencryption) {
+    await updateEncryptedPrivateKey(userId, encryptPrivateKey(privateKeyPem));
+    logger.info({ userId }, 'signing: migrated encrypted private key to active configuration');
+  }
+  logger.info({ userId, needsReencryption }, 'signing: private key decrypted for approval vote');
 
   // 2. Sign canonical payload
   const data = canonicalize(payload);
