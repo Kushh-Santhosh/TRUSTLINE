@@ -1,5 +1,7 @@
 # TrustLine — Judge Q&A Preparation
 
+> **Accuracy note:** validate answers against the current [README](../README.md) and [production gap analysis](../PRODUCTION_GAP_ANALYSIS.md). This preparation document predates the final code-derived documentation pass.
+
 > Anticipated questions with 2–4 sentence answers grounded in the implemented system.
 > Organised by theme. Review before the demo — have the terminal ready to show code.
 

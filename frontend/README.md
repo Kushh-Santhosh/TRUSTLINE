@@ -1,11 +1,25 @@
-# React + TypeScript + Vite
+# TrustLine frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+The frontend is a React + TypeScript + Vite single-page application for the TrustLine user flows.
 
-Currently, two official plugins are available:
+| Area                                    | Source                                                                                   |
+| --------------------------------------- | ---------------------------------------------------------------------------------------- |
+| Routes                                  | `src/App.tsx`                                                                            |
+| Passkey registration/login              | `src/pages/RegisterPage.tsx`, `src/pages/LoginPage.tsx`                                  |
+| Authenticated dashboard/dispute receipt | `src/pages/DashboardPage.tsx`, `src/pages/DisputeDemoPage.tsx`                           |
+| API and current-tab token helpers       | `src/lib/apiClient.ts`, `src/lib/auth.ts`                                                |
+| Security demonstrations                 | `src/pages/AttackDemoPage.tsx`, `src/pages/PhishingCloneDemoPage.tsx`, `src/components/` |
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+Run locally:
+
+```bash
+npm install
+npm run dev
+```
+
+Set `VITE_API_URL` in `.env` when the API is not at `http://localhost:4000`. `npm run build` runs the TypeScript build and Vite production build; `npm run lint` runs Oxlint.
+
+The repository-level [README](../README.md) is the product and security documentation source of truth.
 
 ## React Compiler
 

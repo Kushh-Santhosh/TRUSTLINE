@@ -1,459 +1,449 @@
 # TrustLine
 
-> **Enterprise identity and approval security — built as a hands-on security engineering demonstration.**
+> **Passwordless identity, adaptive step-up, and tamper-evident approval evidence—implemented as an inspectable security engineering demonstration.**
 
 [![TypeScript](https://img.shields.io/badge/TypeScript-5%2B-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![WebAuthn](https://img.shields.io/badge/Auth-WebAuthn-1a73e8)](https://www.w3.org/TR/webauthn-3/)
 [![PostgreSQL](https://img.shields.io/badge/Data-PostgreSQL-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
 [![Docker Compose](https://img.shields.io/badge/Run-Docker%20Compose-2496ED?logo=docker&logoColor=white)](https://docs.docker.com/compose/)
 
-TrustLine is a TypeScript application that combines passwordless sign-in, adaptive step-up authentication, approval decisions, and cryptographic evidence in one demonstrable workflow. It is designed for a hackathon and portfolio setting: the implementation favours inspectable security controls, clear user flows, and verifiable records over product claims that are not yet built.
+TrustLine is a full-stack TypeScript project for demonstrating how phishing-resistant sign-in, risk-triggered TOTP, approval decisions, and cryptographic receipts can fit into one workflow. It is built for a hackathon and portfolio review: the code favors explicit flows, inspectable primitives, and honest boundaries over unimplemented enterprise claims.
 
-| Capability | Implementation |
-| --- | --- |
-| **Enterprise Identity & Approval Security** | Policy-based requests, quorum evaluation, delegation, escalation, and break-glass routes. |
-| **Passwordless Authentication** | WebAuthn passkeys with platform authenticators and adaptive TOTP step-up. |
-| **Cryptographic Approval Ledger** | Ed25519-signed votes and SHA-256 hash-linked audit entries. |
-| **Tamper-Evident Audit Trail** | Independent chain verifier and user-scoped dashboard activity. |
-| **Dispute Resolution** | Resolved-request receipts with signatures, public keys, and related audit entries. |
-| **Judge Mode & Attack Simulations** | API-backed defence demos plus clearly labelled mock trust and attack showcases. |
+> [!IMPORTANT]
+> TrustLine is a security demonstration, **not** a production IAM or approval product. The current approval model is requester-scoped; it does not yet contain independent reviewer assignment, role enforcement, recovery codes, distributed challenge storage, or externally anchored audit evidence. See [PRODUCTION_GAP_ANALYSIS.md](PRODUCTION_GAP_ANALYSIS.md) for the code-derived production gaps.
 
----
+## Contents
 
-## Why TrustLine?
+- [What problem does TrustLine solve?](#what-problem-does-trustline-solve)
+- [Key features and status](#key-features-and-status)
+- [Architecture](#architecture)
+- [Quick start](#quick-start)
+- [Repository walkthrough](#repository-walkthrough)
+- [Authentication](#authentication)
+- [Step-up authentication](#step-up-authentication)
+- [JWT and session management](#jwt-and-session-management)
+- [Authorization and approvals](#authorization-and-approvals)
+- [Cryptography and ledger](#cryptography-and-ledger)
+- [Database](#database)
+- [API overview](#api-overview)
+- [Security boundaries](#security-boundaries)
+- [Testing and deployment](#testing-and-deployment)
+- [Limitations, roadmap, and team](#limitations-roadmap-and-team)
 
-Enterprise identity failures often start before an attacker reaches an application: reused passwords can be replayed, phishing sites can harvest shared secrets, and a weak approval process can turn a single compromised account into an irreversible business action. Even when an approval is legitimate, organisations need evidence that explains who acted, what was signed, and whether the record has been altered.
+## What problem does TrustLine solve?
 
-TrustLine addresses these concerns in a compact, inspectable implementation:
+Passwords are reusable shared secrets: they can be phished, guessed, replayed after a breach, or reused across systems. A plain “approve” button creates a related enterprise problem—an organization may later be unable to show which decision was made, what was signed, or whether the record changed.
 
-- **Password reuse and phishing:** WebAuthn passkeys replace password entry with origin-bound public-key credentials.
-- **Enterprise identity risk:** login history is evaluated using the request IP address and user-agent; medium and high outcomes require TOTP step-up.
-- **Approval fraud and insider actions:** approval requests are owner-scoped, evaluated against a policy quorum, and votes are signed with Ed25519 keys.
-- **Missing auditability:** security-relevant events are appended to a SHA-256 hash chain, while resolved requests expose their receipt evidence.
-- **Session abuse:** refresh tokens are stored as hashes, rotated by family, and a detected replay revokes that family.
+TrustLine uses public-key passkeys as the primary sign-in mechanism, asks for TOTP only when its current login heuristic asks for step-up, records approval activity, and exposes a receipt view for resolved requests. It is intentionally clearer than a password-and-OTP prototype: each step names the security property it is meant to demonstrate.
 
-> **Scope note.** TrustLine is a demonstration application, not a complete enterprise IAM product. In particular, it does not currently implement a separate reviewer-assignment or role directory model, TOTP recovery codes, hardware key lifecycle management, or a distributed challenge store.
+## Key features and status
 
-## Key Features
-
-### Passwordless Authentication
-
-Registration and sign-in use [`@simplewebauthn`](https://simplewebauthn.dev/) on top of the WebAuthn browser API. The server generates registration and authentication options, persists registered credential public keys and counters, and verifies assertions against the configured relying-party ID and allowed frontend origins. Platform authenticators such as Touch ID, Face ID, and device passkeys are used when the browser and device provide them.
-
-### Multi-Factor Authentication
-
-TrustLine can provision a TOTP secret, return an `otpauth://` URI for QR-code enrollment, and verify authenticator codes. A successful passkey login is scored before tokens are issued; medium- or high-risk outcomes return a short-lived pending token and require the TOTP step-up path. The login UI also contains a **number-matching push simulator** as an educational interaction, not a real push-notification service.
-
-**Not implemented:** recovery codes, SMS/email factors, and a production push provider.
-
-### Risk Engine
-
-The current risk engine compares the request IP address and user-agent against the user’s five most recent login events:
-
-| Signal | Current behaviour |
-| --- | --- |
-| No login history | `high` risk → TOTP step-up |
-| New IP with familiar user-agent | `medium` risk → TOTP step-up |
-| Familiar IP | `low` risk |
-| New IP and new user-agent after history exists | `low` risk under the current heuristic |
-
-Every decision is appended to the audit ledger. The dashboard presents a human-readable device label derived from the user-agent; TrustLine does **not** currently calculate or persist a separate device-fingerprint value.
-
-### Secure Sessions
-
-- Short-lived JWT access tokens are verified by protected API middleware.
-- Refresh tokens are random values stored only as SHA-256 hashes in PostgreSQL.
-- Every login starts a refresh-token family; rotation consumes the current token and issues a replacement in the same family.
-- Reuse of a consumed refresh token revokes the whole family.
-- The dashboard lists active refresh-token families with recent IP/user-agent context and can revoke a family belonging to the signed-in user.
-- Browser tokens are retained in `sessionStorage` for the active browser session.
-
-### Approval Workflow
-
-An authenticated user can create policies and requests. Policies support `single_senior`, `n_of_m`, and `role_weighted` quorum shapes; the quorum evaluator is a deterministic, separately tested service. The application also includes delegation records, a periodic escalation check, and a break-glass route that marks an approval as requiring review.
-
-For the current demo security model, requests, votes, resolved-request lists, and receipts are scoped to their requester. This prevents cross-user data exposure, but it also means this is **not** yet a multi-user reviewer-assignment workflow. The Dashboard’s demo policy uses `single_senior`, so one approve or deny vote resolves it.
-
-### Cryptographic Signing
-
-Every accepted vote is signed server-side with the voter’s Ed25519 private key over a canonical payload containing the request ID, decision, and timestamp. Public keys are retained with the vote evidence. Private keys are encrypted at rest with AES-256-GCM; the encryption key is derived from the configured signing-key encryption secret. The development configuration also supports a controlled, one-time re-encryption path for legacy local keys when that secret changes.
-
-### Immutable Ledger
-
-TrustLine appends audit entries into a SHA-256 hash chain. Each entry contains the preceding hash and a hash computed from that predecessor plus the event payload. The standalone `npm run verify-chain` script independently recomputes and validates the entire chain. The ledger is **tamper-evident**: a changed entry makes verification fail; it is not a blockchain or an externally replicated immutable store.
-
-### Audit Trail
-
-The application records login events, risk decisions, approval votes, and request-resolution events. Dashboard activity is filtered to the authenticated user’s relevant events. Audit writes are intentionally fail-open in this demo so a transient audit-write failure does not block authentication or an approval; production deployments may choose a stricter availability/integrity trade-off.
-
-### Dispute Resolution
-
-The Dispute Resolution screen lists the signed-in user’s resolved requests and loads a receipt containing:
-
-- the request identifier;
-- signed vote decisions and their Ed25519 public keys;
-- related hash-chained audit entries; and
-- displayed hashes, signatures, IDs, and timestamps with copy controls.
-
-It demonstrates evidence review for a resolved request. It is not a full case-management or dispute-ticket lifecycle.
-
-### Security Demonstrations
-
-| Demonstration | What it shows |
-| --- | --- |
-| **Attack Demo** | Calls the real step-up and refresh endpoints to demonstrate rate limiting and refresh-token-family replay revocation. It is a controlled demo, not an attack tool. |
-| **Phishing Clone Demo** | A clearly labelled simulated clone that invokes WebAuthn to explain that passkeys are origin-bound and do not reveal a reusable password. The page does not create an authenticated session. |
-| **Push Simulator** | A local, number-matching second-device interaction used in the login demonstration. It models a confirmation UX; it does not send a notification. |
-
-### Judge Mode, Adaptive Trust Engine, and Trust Timeline
-
-The Dashboard includes **Judge Mode**, a guided, one-click walkthrough for presenting the project. It composes three reusable browser components:
-
-- **Adaptive Trust Engine** — selectable high, medium, and low trust-score scenarios with explainability factors and an outcome card.
-- **Trust Timeline** — a visual sequence of authentication, trust, approval, and receipt events.
-- **Attack Simulation** — animated phishing, new-device, session-hijack, and replay scenarios with signal severities and outcomes.
-
-These components are deliberately marked **mock/demo only** in source. They use built-in browser data, do not call the backend, do not calculate a live trust score, and do not enforce any security decision. They are presentation tooling that illustrates how the currently implemented controls could be surfaced in a richer product.
-
-### Implementation Status
-
-| Area | Status | Notes |
-| --- | --- | --- |
-| Passkey registration and login | Implemented | WebAuthn options and verification are API-backed. |
-| TOTP enrollment and adaptive step-up | Implemented | Risk uses IP and user-agent history; no recovery codes. |
-| Sessions and refresh replay defence | Implemented | API-backed session listing, revocation, rotation, and family invalidation. |
-| Approval, signing, receipt, and audit evidence | Implemented | Owner-scoped workflow with Ed25519 vote signatures and receipts. |
-| Dispute Resolution screen | Implemented | API-backed resolved-request picker and receipt viewer. |
-| MFA-fatigue and token-replay demo | Implemented demonstration | Intentionally exercises the real local API controls. |
-| Judge Mode, Trust Engine, Timeline, Attack Simulation | Simulated | Browser-only mock data; no API calls or live enforcement. |
+| Area                    | What is implemented                                                                                                 | Why it exists                                                         | Status                               |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- | ------------------------------------ |
+| Passwordless sign-in    | WebAuthn registration/authentication with SimpleWebAuthn, credential public keys, counters, RP ID and origin checks | avoids password storage and makes origin-bound phishing harder        | Implemented                          |
+| Adaptive step-up        | IP/user-agent login-history heuristic; RFC 6238 TOTP when score is medium/high                                      | shows that sensitive login contexts can require another factor        | Implemented heuristic                |
+| TOTP enrollment         | RFC 4648 Base32 secret, standard `otpauth://` URI, QR rendering, Node `crypto` verification                         | interoperates with standard authenticator apps                        | Implemented                          |
+| Sessions                | 15-minute bearer access JWTs; 7-day opaque refresh tokens hashed in PostgreSQL and rotated by family                | limits access-token lifetime and detects consumed-token reuse         | Implemented                          |
+| Approval workflow       | policies, requests, quorum evaluator, vote records, delegations, escalation flag, break-glass route                 | demonstrates approval-state modelling                                 | Implemented demo model               |
+| Signatures and receipts | server-side Ed25519 vote signatures, encrypted private keys, receipt endpoint                                       | makes approval evidence inspectable                                   | Implemented, server-held keys        |
+| Audit ledger            | SHA-256 linked audit entries and independent verifier script                                                        | demonstrates tamper-evident sequencing                                | Implemented, not externally anchored |
+| Demonstrations          | MFA-fatigue/replay page; phishing-clone page; mock trust/attack/Judge Mode components                               | explains attack properties without presenting simulations as controls | Mixed API-backed and mock—labelled   |
 
 ## Architecture
 
-### System architecture
-
 ```mermaid
 flowchart LR
-  Browser[React + Vite browser client] -->|JSON over HTTP / Bearer JWT| API[Express + TypeScript API]
-  Browser -->|WebAuthn ceremonies| Authenticator[Platform authenticator / passkey]
-  API -->|WebAuthn verification| Authenticator
-  API --> PG[(PostgreSQL)]
-  API --> Redis[(Redis service configured for stack)]
-  API --> Audit[SHA-256 audit chain]
-  API --> Signing[Ed25519 signing service]
-  Signing --> PG
-  Audit --> PG
-  Browser --> Judge[Judge Mode / trust & attack showcase]
-  Judge -. mock data only .-> Browser
+  U[User] --> F[React SPA]
+  F -->|JSON / Bearer token| A[Express API]
+  F -->|WebAuthn ceremony| W[Platform authenticator]
+  A --> P[(PostgreSQL)]
+  A --> C[Node crypto\nTOTP · Ed25519 · AES-GCM · SHA-256]
+  A --> S[@simplewebauthn/server]
 ```
 
-PostgreSQL is the active persistence layer for users, credentials, sessions, policies, requests, votes, signing keys, and audit entries. Redis is provisioned and required by configuration in the Docker stack; the current challenge and rate-limit stores are in-memory, so Redis is not yet used as their backing store.
+| Layer        | Technology                    | Why this choice                                                             | Role in TrustLine                                    |
+| ------------ | ----------------------------- | --------------------------------------------------------------------------- | ---------------------------------------------------- |
+| UI           | React, Vite, TypeScript       | component model and fast typed development                                  | browser ceremonies, dashboard, demonstrations        |
+| API          | Express, TypeScript           | small explicit HTTP surface                                                 | routes, middleware, orchestration                    |
+| Database     | PostgreSQL via `pg`           | relational constraints plus JSONB for action/policy payloads                | identities, credentials, sessions, approvals, ledger |
+| WebAuthn     | SimpleWebAuthn browser/server | maintained protocol implementation rather than handwritten WebAuthn parsing | passkey option generation and verification           |
+| Cryptography | Node.js `crypto`              | built-in CSPRNG, HMAC, AES-GCM, Ed25519, SHA-256                            | TOTP, token hashing, key protection, signing, ledger |
+| Operations   | Docker Compose, Pino          | reproducible local stack and structured logs                                | local infrastructure and diagnostics                 |
 
-### Authentication flow
+> [!NOTE]
+> Docker Compose starts Redis for the local stack, but the current tracked application does not import a Redis client. WebAuthn challenges and the step-up limiter are in-process state; this is one reason the repository is not horizontally production-ready.
 
-```mermaid
-sequenceDiagram
-  participant U as User agent
-  participant F as React client
-  participant A as API
-  participant W as WebAuthn authenticator
-  participant P as PostgreSQL
+## Screenshots
 
-  F->>A: POST /api/auth/login/options { email }
-  A->>P: Find user credentials
-  A-->>F: Authentication options + fresh challenge
-  F->>W: WebAuthn get()
-  W-->>F: Signed assertion
-  F->>A: POST /api/auth/login/verify
-  A->>P: Find credential and counter
-  A->>A: Verify challenge, origin, RP ID, assertion
-  A->>A: Score IP and user-agent history
-  alt medium/high risk
-    A-->>F: Pending step-up token
-    F->>A: POST /api/auth/login/step-up { TOTP code }
-  end
-  A->>P: Store session and login event
-  A-->>F: Access + refresh tokens
-```
+Screenshots are intentionally not committed in the current repository. Add them under `docs/screenshots/` when available:
 
-### Approval and receipt flow
+| Screen                                   | Suggested asset                                                          |
+| ---------------------------------------- | ------------------------------------------------------------------------ |
+| Passkey registration and TOTP enrollment | `docs/screenshots/register.png`                                          |
+| Passwordless sign-in and step-up         | `docs/screenshots/login.png`                                             |
+| Dashboard and owned pending requests     | `docs/screenshots/dashboard.png`                                         |
+| Resolved request receipt                 | `docs/screenshots/dispute.png`                                           |
+| Attack and phishing demonstrations       | `docs/screenshots/attack-demo.png`, `docs/screenshots/phishing-demo.png` |
 
-```mermaid
-flowchart TD
-  Create[Create owner-scoped request] --> Policy[Snapshot policy version]
-  Policy --> Pending[Pending request]
-  Pending --> Vote[Approve or deny]
-  Vote --> Sign[Canonical payload signed with Ed25519]
-  Sign --> Quorum[Evaluate quorum]
-  Quorum -->|pending| Pending
-  Quorum -->|approved / denied| Resolve[Resolve request]
-  Resolve --> Audit[Append vote and resolution audit events]
-  Audit --> Receipt[Owner retrieves receipt: votes, public keys, audit entries]
-```
-
-### Ledger and session flows
-
-```mermaid
-flowchart LR
-  Event[Login, risk decision, vote, resolution] --> Entry[Audit entry]
-  Entry --> Hash[SHA-256 of previous hash + payload]
-  Hash --> Ledger[(audit_log)]
-  Ledger --> Verify[Independent verify-chain script]
-
-  Login[Verified login] --> Access[15-minute access JWT]
-  Login --> Refresh[Hashed 7-day refresh token]
-  Refresh --> Rotate[Rotate within family]
-  Rotate --> Reuse{Consumed token reused?}
-  Reuse -->|yes| Revoke[Revoke token family]
-  Reuse -->|no| Refresh
-```
-
-## Project Structure
-
-```text
-trustline/
-├── backend/
-│   ├── migrations/          PostgreSQL schema migrations
-│   └── src/
-│       ├── db/              PostgreSQL pool
-│       ├── jobs/            Pending-request escalation job
-│       ├── lib/             Configuration and structured logging
-│       ├── middleware/      JWT authentication and error handling
-│       ├── routes/          Auth, approval, ledger, and risk HTTP routes
-│       ├── scripts/         Seed, smoke-test, load-test, and chain verification scripts
-│       ├── services/        WebAuthn, sessions, TOTP, risk, quorum, keys, signing, audit
-│       └── tests/           Vitest integration and unit tests
-├── frontend/
-│   └── src/
-│       ├── components/      Reusable UI, including PushSimulator
-│       ├── lib/             API client and token helpers
-│       └── pages/           Login, registration, dashboard, dispute, and demo screens
-├── docker-compose.yml       Local PostgreSQL, Redis, API, and frontend stack
-└── start-demo.sh            Stack startup, migrations, and demo seed script
-```
-
-The reusable dashboard showcase components are `AdaptiveTrustEngine.tsx`, `TrustTimeline.tsx`, `AttackSimulation.tsx`, and `JudgeMode.tsx`; they are explicitly browser-only mock demonstrations. There are no top-level `ledger/` or `security/` directories: those concerns live in `backend/src/services/audit.service.ts`, `signing.service.ts`, `keys.service.ts`, `webauthn.service.ts`, and related middleware/routes.
-
-## Technology Stack
-
-| Area | Implementation |
-| --- | --- |
-| Frontend | React 19, TypeScript, Vite, React Router, Tailwind CSS |
-| Backend | Node.js, Express 5, TypeScript, Pino |
-| Authentication | WebAuthn / SimpleWebAuthn, TOTP via otplib, JWT |
-| Security primitives | Ed25519, AES-256-GCM, SHA-256, WebAuthn credential counters |
-| Database | PostgreSQL 16, node-postgres, node-pg-migrate |
-| Infrastructure | Docker Compose, PostgreSQL, Redis service |
-| Testing | Vitest, Supertest, frontend Oxlint, TypeScript type checking |
-
-## Security Design
-
-| Control | Current implementation |
-| --- | --- |
-| WebAuthn and passkeys | Registration/login options and server verification with credential counters, configured RP ID, and allowed origins. |
-| Challenge verification | Registration and login challenges are held in separate in-memory maps and consumed only after successful verification. This is suitable for one local process, not horizontal scaling. |
-| Origin / RP verification | SimpleWebAuthn verification uses the configured frontend-origin allowlist and `WEBAUTHN_RP_ID` (default `localhost`). |
-| JWT and refresh tokens | 15-minute access JWTs; 7-day random refresh tokens stored as hashes and rotated by family. |
-| Replay protection | WebAuthn counters are updated after successful assertions; reused refresh tokens revoke their family. |
-| TOTP | QR-code provisioning and code verification; step-up attempts are rate-limited in memory. |
-| Risk engine | Heuristic based on prior IP/user-agent login events and recorded in the audit chain. |
-| Ed25519 and AES-GCM | Votes are signed using Ed25519 keys; private keys are encrypted using AES-256-GCM. |
-| Audit trail | Serializable writes create a predecessor-linked SHA-256 chain; an independent verifier checks the chain. |
-| Redis | Included in configuration and Docker infrastructure, but not yet used as a production session, challenge, or rate-limit store. |
-
-## Approval Architecture
-
-| Stage | Implementation |
-| --- | --- |
-| **Request** | A policy version is snapshotted when an authenticated owner creates a request. |
-| **Vote** | Owner-scoped approve/deny vote endpoint prevents cross-user request access. |
-| **Signature** | The server signs canonical vote data with the user’s Ed25519 key. |
-| **Resolution** | The quorum service returns `pending`, `approved`, or `denied`; resolution time is recorded. |
-| **Ledger** | Vote and resolution events are appended to the audit chain. |
-| **Receipt** | The owner can retrieve vote signatures, public keys, and relevant audit entries. |
-
-## API Overview
-
-All protected endpoints expect `Authorization: Bearer <accessToken>`.
-
-<details>
-<summary><strong>Authentication and MFA</strong></summary>
-
-| Method | Endpoint | Purpose |
-| --- | --- | --- |
-| POST | `/api/auth/register/options` | Generate passkey registration options. |
-| POST | `/api/auth/register/verify` | Verify and store a passkey credential. |
-| POST | `/api/auth/login/options` | Generate passkey authentication options. |
-| POST | `/api/auth/login/verify` | Verify an assertion; issue session or step-up token. |
-| POST | `/api/auth/login/step-up` | Verify TOTP for a pending risk step-up. |
-| POST | `/api/auth/totp/setup` | Generate a TOTP secret and provisioning URI. |
-| POST | `/api/auth/totp/verify` | Verify a TOTP code and enable TOTP. |
-| POST | `/api/auth/refresh` | Rotate a refresh token. |
-</details>
-
-<details>
-<summary><strong>Sessions and audit activity</strong></summary>
-
-| Method | Endpoint | Purpose |
-| --- | --- | --- |
-| GET | `/api/auth/sessions` | List the current user’s active sessions. |
-| DELETE | `/api/auth/sessions/:familyId` | Revoke one of the current user’s token families. |
-| GET | `/api/auth/audit` | List activity entries relevant to the current user. |
-</details>
-
-<details>
-<summary><strong>Approvals and ledger</strong></summary>
-
-| Method | Endpoint | Purpose |
-| --- | --- | --- |
-| POST / GET | `/api/approval/policies` | Create or list approval policies. |
-| GET | `/api/approval/policies/:id` | Retrieve a policy. |
-| POST | `/api/approval/requests` | Create an owner-scoped approval request. |
-| GET | `/api/approval/requests/pending` | List the current user’s pending requests. |
-| POST | `/api/approval/requests/:id/votes` | Submit an approve/deny vote. |
-| POST | `/api/approval/requests/:id/break-glass` | Force-approve an owned request and mark it for review. |
-| POST | `/api/approval/delegations` | Create a delegation record. |
-| GET | `/api/approval/requests` | List the current user’s resolved requests. |
-| GET | `/api/ledger/receipt/:requestId` | Retrieve a receipt for an owned request. |
-</details>
-
-<details>
-<summary><strong>Risk and disputes</strong></summary>
-
-The risk decision runs inside the login flow; `/api/risk` is currently a `501 Not Implemented` placeholder. There is no separate dispute API: the Dispute Resolution page uses the resolved-request and receipt endpoints above.
-</details>
-
-## Development Setup
+## Quick start
 
 ### Prerequisites
 
 - Node.js 20+
-- npm
-- Docker Desktop / Docker Compose (recommended for PostgreSQL and Redis)
-- A WebAuthn-capable browser and platform authenticator for passkey ceremonies
+- Docker Desktop / Docker Compose (recommended for PostgreSQL)
+- A WebAuthn-capable browser and platform authenticator
 
-### Docker
+### Run with Docker
 
 ```bash
-git clone https://github.com/Kushh-Santhosh/TRUSTLINE.git trustline
-cd trustline
-
-# Docker Compose loads backend/.env for backend secrets and configuration.
+git clone https://github.com/Kushh-Santhosh/TRUSTLINE.git
+cd TRUSTLINE
 cp backend/.env.example backend/.env
-# Replace the placeholder JWT secrets before using anything beyond local demo work.
-
-./start-demo.sh --build
+# Set a strong JWT_SECRET and, for production-like local testing, a separate SIGNING_KEY_ENCRYPTION_SECRET.
+docker compose up --build
+docker compose exec backend npm run migrate:up
 ```
 
-The script starts the stack, applies migrations, and seeds demo records. URLs:
+The frontend is served on `http://localhost:5173`; the API is on `http://localhost:4000`; health is `http://localhost:4000/health`.
 
-| Service | URL |
-| --- | --- |
-| Frontend | `http://localhost:5173` |
-| API | `http://localhost:4000` |
-| Health check | `http://localhost:4000/health` |
-
-If port 5173 is unavailable, run the Vite frontend directly; the backend allowlist supports both `http://localhost:5173` and `http://localhost:5174` by default.
-
-### Without Docker for the application processes
-
-Start PostgreSQL and Redis yourself, then:
+### Run services locally
 
 ```bash
-# Terminal 1 — database services can still be provided by Compose
-docker compose up -d postgres redis
+# Start PostgreSQL (for example with Docker Compose)
+docker compose up -d postgres
 
-# Terminal 2 — API
 cd backend
 cp .env.example .env
 npm install
 npm run migrate:up
-npm run seed
 npm run dev
 
-# Terminal 3 — frontend
+# In another terminal
 cd frontend
+cp .env.example .env
 npm install
 npm run dev
 ```
 
-The frontend defaults `VITE_API_URL` to `http://localhost:4000`.
+`frontend/.env` may set `VITE_API_URL=http://localhost:4000`. For local WebAuthn, `WEBAUTHN_RP_ID=localhost` and `FRONTEND_ORIGIN=http://localhost:5173,http://localhost:5174` support the common Vite ports.
 
-### Environment variables
+### Required backend environment
 
-See [`backend/.env.example`](backend/.env.example) for the complete template.
+| Variable                        | Purpose                                                                                            |
+| ------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`                  | PostgreSQL connection string                                                                       |
+| `JWT_SECRET`                    | signs/verifies access and pending step-up JWTs                                                     |
+| `SIGNING_KEY_ENCRYPTION_SECRET` | optional in development; encrypts stored Ed25519 private keys and should be separate in production |
+| `FRONTEND_ORIGIN`               | comma-separated allowed browser origins for CORS and WebAuthn verification                         |
+| `WEBAUTHN_RP_ID`                | relying-party ID, normally the frontend host                                                       |
+| `PORT`                          | API port; defaults to `4000`                                                                       |
 
-| Variable | Required | Purpose |
-| --- | --- | --- |
-| `DATABASE_URL` | Yes | PostgreSQL connection string. |
-| `REDIS_URL` | Yes | Redis connection string required by configuration. |
-| `JWT_SECRET` / `JWT_REFRESH_SECRET` | Yes | JWT signing secrets. |
-| `FRONTEND_ORIGIN` | No | Comma-separated allowed frontend origins. |
-| `WEBAUTHN_RP_ID` | No | WebAuthn relying-party ID; `localhost` locally. |
-| `SIGNING_KEY_ENCRYPTION_SECRET` | No | Dedicated private-key encryption secret; defaults to `JWT_SECRET`. |
-| `SIGNING_KEY_PREVIOUS_ENCRYPTION_SECRETS` | No | Temporary comma-separated migration keys for legacy local signing records. |
+`JWT_REFRESH_SECRET` is **not used by the current backend**. Refresh tokens are random opaque values, not JWTs. `REDIS_URL` is also not read by the current runtime source.
 
-### Quality checks
+## Repository walkthrough
 
-```bash
-cd frontend && npm run lint && npm run build
-cd ../backend && npm run typecheck && npm test
-
-# Optional: independently validate the local audit chain
-npm run verify-chain
+```mermaid
+flowchart TD
+  FE[frontend/src] --> Pages[pages: routed user flows]
+  FE --> Lib[lib: API and session helpers]
+  BE[backend/src] --> Routes[routes: HTTP controllers]
+  BE --> Services[services: security and persistence logic]
+  BE --> Migrations[migrations: PostgreSQL schema]
+  Routes --> Services --> DB[(PostgreSQL)]
 ```
 
-## Demo Walkthrough
+| Directory/file             | Why it exists                         | How it interacts                                                                     |
+| -------------------------- | ------------------------------------- | ------------------------------------------------------------------------------------ |
+| `frontend/src/pages/`      | route-level UI flows                  | calls `lib/apiClient.ts`; WebAuthn pages use SimpleWebAuthn browser                  |
+| `frontend/src/components/` | reusable UI plus labelled simulations | `PushSimulator` is used by login; several components are mock-only                   |
+| `frontend/src/lib/`        | request and token helpers             | `apiClient.ts` sends JSON/Bearer requests; `auth.ts` stores tokens in sessionStorage |
+| `backend/src/routes/`      | API controllers                       | validates basic inputs and calls services                                            |
+| `backend/src/services/`    | security/persistence behavior         | WebAuthn, TOTP, sessions, risk, approvals, keys, signing, audit                      |
+| `backend/src/middleware/`  | cross-cutting HTTP concerns           | `requireAuth` validates access JWTs and sets `req.userId`                            |
+| `backend/migrations/`      | schema source of truth                | creates tables, relationships, unique constraints, indexes                           |
+| `backend/src/scripts/`     | operational/demo tools                | seed data, smoke/load requests, independent audit-chain verifier                     |
 
-1. Open `/register`, enter an email, and create a passkey with the device authenticator.
-2. Enrol the displayed TOTP secret in an authenticator app and verify the first code.
-3. Open `/login` and authenticate with the registered passkey.
-4. Complete number matching and/or TOTP if the demonstration flow requests it.
-5. On the Dashboard, create a demo approval request.
-6. Approve or deny it; the single-senior demo policy resolves after one vote.
-7. Open **Dispute Resolution**, choose the resolved request, and inspect the receipt’s signatures, keys, and audit hashes.
-8. Visit **Attack Demo** to observe MFA-fatigue rate limiting and refresh-token replay revocation.
-9. Visit **Phishing Clone Demo** to review the origin-bound passkey explanation.
-10. On the Dashboard, run **Judge Mode** for the guided mock-data trust, timeline, and attack showcase. It does not modify the backend or the authenticated workflow.
+### Service map
 
-## Screenshots
+| Service                                    | Problem solved                                            | Depended on by                           | If removed                           |
+| ------------------------------------------ | --------------------------------------------------------- | ---------------------------------------- | ------------------------------------ |
+| `webauthn.service.ts`                      | passkey options, challenge verification, counter updates  | auth routes                              | passkey ceremonies cannot run        |
+| `totp.service.ts`                          | standard QR provisioning and native RFC 6238 verification | auth routes                              | step-up/enrollment cannot run        |
+| `session.service.ts`                       | access JWT issuance and refresh-family rotation           | auth routes                              | no authenticated browser session     |
+| `risk.service.ts`                          | simple risk outcome and step-up attempt limit             | auth routes                              | no adaptive TOTP trigger             |
+| `request.service.ts` / `quorum.service.ts` | request, vote, and quorum state                           | approval routes                          | approval workflow cannot resolve     |
+| `keys.service.ts` / `signing.service.ts`   | Ed25519 key storage and vote signing                      | WebAuthn/request services                | receipt signatures cannot be created |
+| `audit.service.ts`                         | hash-chain append and receipt assembly                    | sessions, risk, approvals, ledger routes | no audit trail or receipt evidence   |
 
-Screenshots are intentionally not checked into this repository yet. Add captures to `docs/screenshots/` and replace the placeholders below for a submission or portfolio page.
+For the complete file/function/data-flow handbook, see [PROJECT_ARCHITECTURE.md](PROJECT_ARCHITECTURE.md). For authentication specifics, see [AUTH_FLOW.md](AUTH_FLOW.md).
 
-| Screen | Placeholder / caption |
-| --- | --- |
-| Landing / Login | `![TrustLine login](docs/screenshots/login.png)` — passkey-first sign-in and adaptive step-up. |
-| Registration | `![Passkey registration](docs/screenshots/register.png)` — passkey and TOTP enrollment. |
-| Dashboard | `![Dashboard](docs/screenshots/dashboard.png)` — active sessions, owner-scoped approvals, and activity. |
-| Approval | `![Approval workflow](docs/screenshots/approval.png)` — request creation and approve/deny actions. |
-| Ledger / Receipt | `![Ledger receipt](docs/screenshots/ledger.png)` — signatures, public keys, and audit hashes. |
-| Dispute | `![Dispute resolution](docs/screenshots/dispute.png)` — evidence review for a resolved request. |
-| Attack Demo | `![Attack demo](docs/screenshots/attack-demo.png)` — rate-limit and replay simulations. |
-| Phishing Demo | `![Phishing demo](docs/screenshots/phishing-demo.png)` — clearly labelled phishing-resistance simulation. |
-| Judge Mode | `![Judge Mode](docs/screenshots/judge-mode.png)` — mock-data walkthrough of trust, timeline, and attack concepts. |
+## Authentication
 
-## Performance and Operational Characteristics
+### What, why, and how
 
-- The frontend is a statically built Vite SPA served by the Docker frontend image.
-- The API is a single Express process with PostgreSQL-backed persistence.
-- Audit appends use database transactions and lock the latest chain entry to maintain order.
-- The escalation job runs every 30 seconds in the API process.
-- Challenge storage and step-up rate limiting are in memory, so they reset on restart and are not suitable for multi-instance deployment without a shared store.
-- Judge Mode and its trust/attack visualizations run entirely in the browser with local mock data; they add no API or database load.
+| Question                            | TrustLine answer                                                                                                                                                                             |
+| ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **What is primary authentication?** | WebAuthn passkeys: public-key credentials held by a browser/platform authenticator.                                                                                                          |
+| **Why not passwords?**              | Passwords are shared secrets. Reuse, breach replay, and lookalike pages can compromise them; the server must also defend a password database.                                                |
+| **How does a passkey work here?**   | Server generates options/challenge → browser invokes authenticator → browser returns signed response → SimpleWebAuthn verifies challenge, origin, RP ID, credential public key, and counter. |
+| **Where is the private key?**       | The WebAuthn credential private key remains in the platform authenticator. TrustLine stores the credential ID, public key, and counter in `webauthn_credentials`.                            |
+| **Why is phishing harder?**         | WebAuthn assertions are bound to the relying-party/origin rules; a credential created for the legitimate origin is not a reusable password a lookalike site can collect.                     |
 
-## Future Roadmap
+```mermaid
+sequenceDiagram
+  participant B as Browser
+  participant A as API
+  participant K as Authenticator
+  B->>A: POST /api/auth/login/options {email}
+  A->>A: create and store challenge; load user credentials
+  A-->>B: PublicKeyCredentialRequestOptionsJSON
+  B->>K: startAuthentication(options)
+  K-->>B: signed assertion
+  B->>A: POST /api/auth/login/verify {email,response}
+  A->>A: verify challenge + origin + RP ID + public key + counter
+```
 
-- Move WebAuthn challenges and rate limits to Redis for multi-instance operation.
-- Add explicit reviewer assignment, directory-backed roles, and role enforcement for multi-party approvals.
-- Encrypt TOTP secrets using a managed key and add recovery-code support.
-- Add stricter audit-write policies, external ledger anchoring, and operational monitoring.
-- Introduce HttpOnly-cookie session handling and production secret management.
-- Add signed receipt export and end-to-end browser test coverage.
-- Connect Judge Mode, trust scoring, timeline events, and attack visualizations to evidence-backed backend data once the underlying policy signals exist.
+### Authentication comparison
 
-## Contributors
+| Method                 | Main weakness                                         | Phishing resistance            | What TrustLine uses it for      |
+| ---------------------- | ----------------------------------------------------- | ------------------------------ | ------------------------------- |
+| Passwords              | reusable server-verified secret                       | Low                            | Not used                        |
+| SMS OTP                | SIM swap, interception, phishing                      | Low–medium                     | Not used                        |
+| Email OTP              | email account becomes the security boundary           | Low–medium                     | Not used                        |
+| Authenticator app TOTP | shared secret can be phished/stolen                   | Medium                         | Secondary adaptive step-up only |
+| Passkeys               | requires compatible authenticator and recovery design | High for origin-bound phishing | Primary authentication          |
 
-Built for the Tally hackathon by the TrustLine project contributors. Contributions and issue reports are welcome; please keep security claims tied to reproducible implementation details.
+## Step-up authentication
+
+One successful primary login is not always enough: a new context may need extra assurance before a session is issued. TrustLine’s current heuristic reads up to five login events and considers IP plus user-agent. No history is high risk; a new IP with familiar user-agent is medium; familiar IP is low; a new IP/new user-agent is currently low under this deliberately simple demo heuristic.
+
+TOTP is a **secondary** factor—not the primary login method. `totp.service.ts` implements RFC 6238 with Node.js built-in `crypto`:
+
+| Primitive          | What it does                                                               | Why it is used                                         |
+| ------------------ | -------------------------------------------------------------------------- | ------------------------------------------------------ |
+| RFC 4648 Base32    | text encoding for random secret bytes                                      | standard authenticator-app provisioning format         |
+| `otpauth://` URI   | describes issuer, secret, SHA-1, six digits, 30-second period              | interoperable QR enrollment profile                    |
+| HMAC-SHA1 / HOTP   | calculates code material from shared secret and counter                    | RFC 4226/6238 standard profile used by mainstream apps |
+| Dynamic truncation | chooses a positive 31-bit value from the HMAC                              | required HOTP algorithm step                           |
+| 30-second counter  | transforms HOTP into time-based OTP                                        | common RFC 6238 interval                               |
+| modulo 1,000,000   | produces a six-digit code                                                  | standard UI/authenticator convention                   |
+| `timingSafeEqual`  | compares candidate and submitted code without normal early byte comparison | reduces comparison-timing leakage                      |
+
+The server returns the provisioning URI; `RegisterPage.tsx` uses `qrcode` only to render it. Microsoft Authenticator, Google Authenticator, Authy, Bitwarden, and 1Password support this standard SHA-1/six-digit/30-second profile. No third-party TOTP verification service or library runs in the backend.
+
+```mermaid
+sequenceDiagram
+  participant B as LoginPage
+  participant A as API
+  participant T as totp.service
+  B->>A: passkey assertion verified
+  A->>A: score IP + user-agent history
+  alt medium/high risk
+    A-->>B: pending JWT (5 minutes)
+    B->>A: POST /api/auth/login/step-up {pendingToken, code}
+    A->>T: verifyCode(userId, code)
+    T-->>A: valid / invalid
+    A-->>B: access + refresh tokens
+  else low risk
+    A-->>B: access + refresh tokens
+  end
+```
+
+## JWT and session management
+
+| Element        | What it is                               | Why it exists                                                                               | How it works                                            |
+| -------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| Access token   | signed JWT, 15 minutes                   | compact credential for protected API requests                                               | `requireAuth` verifies signature/expiry and reads `sub` |
+| Pending token  | signed JWT, 5 minutes, purpose `step_up` | connects successful passkey verification to TOTP without exposing a raw user ID in UI state | step-up route verifies signature/expiry and purpose     |
+| Refresh token  | 40 random bytes rendered as hex, 7 days  | longer-lived renewal credential without making it a self-contained signed JWT               | only SHA-256 hash is stored in `refresh_tokens`         |
+| Refresh family | UUID shared by rotations                 | detects reuse of an already consumed token                                                  | consumed token is revoked; reuse revokes its family     |
+
+Why JWTs for access? The API can verify a short-lived signed credential without a database lookup on every protected request. Why opaque refresh values? A random token has no claims to trust or verify; it is looked up by its SHA-256 hash and can be revoked/rotated in PostgreSQL. `JWT_REFRESH_SECRET` is no longer required because refresh tokens are **not JWTs**.
+
+> [!WARNING]
+> The current browser stores both tokens in `sessionStorage`, and access tokens remain valid until their expiry after family revocation. This is a known production gap, documented in [PRODUCTION_GAP_ANALYSIS.md](PRODUCTION_GAP_ANALYSIS.md).
+
+## Authorization and approvals
+
+### Current authorization boundary
+
+Protected routes use `requireAuth`, which verifies an access JWT and attaches `req.userId`. Session queries are scoped to that ID. Pending/resolved requests and receipts are requester-scoped to prevent cross-user dashboard data exposure.
+
+> [!CAUTION]
+> This is **not** a complete multi-reviewer enterprise authorization model. `eligible_roles` is stored with policies, but no role directory or reviewer assignment is implemented. The requester can vote on their own current demo request. Do not present the current implementation as separation of duties.
+
+### Workflow
+
+```mermaid
+flowchart LR
+  C[Authenticated user] --> P[Create/find policy]
+  P --> R[Create pending request\npolicy version number stored]
+  R --> V[Submit approve/deny vote]
+  V --> SIG[Server Ed25519 signature]
+  SIG --> Q[Deterministic quorum evaluation]
+  Q -->|pending| R
+  Q -->|approved / denied| RES[Set resolved status]
+  V --> AUD[Append audit event, fail-open]
+  RES --> REC[Receipt: votes, public keys, audit entries]
+```
+
+| Step      | Why it exists                                | Current implementation                                                       |
+| --------- | -------------------------------------------- | ---------------------------------------------------------------------------- |
+| Policy    | describes quorum shape                       | `single_senior`, `n_of_m`, `role_weighted` data in `approval_policies`       |
+| Request   | captures an action and policy version number | `approval_requests` holds JSONB action payload and status                    |
+| Vote      | records decision once per voter/request      | `approval_votes` unique `(request_id, approver_id)`                          |
+| Quorum    | determines terminal state                    | pure `evaluateQuorum` function                                               |
+| Signature | supplies cryptographic receipt material      | server signs `{requestId, decision, timestamp}` with its stored per-user key |
+| Audit     | links security events                        | `appendAuditEntry` hash-chain write                                          |
+| Dispute   | shows evidence                               | receipt route joins votes/public keys and related audit entries              |
+
+## Cryptography and ledger
+
+| Algorithm   | What it protects                                            | Why selected                                      | Current use                                   |
+| ----------- | ----------------------------------------------------------- | ------------------------------------------------- | --------------------------------------------- |
+| AES-256-GCM | confidentiality and integrity of stored Ed25519 private PEM | authenticated encryption supported by Node crypto | private key stored as `iv:tag:ciphertext`     |
+| Ed25519     | compact, modern public-key signatures                       | simple safe Node API and efficient signatures     | server-side vote signing/receipt verification |
+| SHA-256     | one-way token lookup and chain link hashing                 | widely deployed secure hash                       | refresh hash and audit entries                |
+| HMAC-SHA1   | RFC 4226/6238 HOTP calculation                              | standard interoperable authenticator profile      | TOTP only, not a general password hash        |
+
+```mermaid
+flowchart LR
+  G[GENESIS] --> E1[entry 1\nthis_hash = SHA-256(prev + JSON payload)]
+  E1 --> E2[entry 2\nprev_hash = entry 1 hash]
+  E2 --> EN[entry n]
+  EN --> V[verifyChain.ts recomputes links]
+```
+
+The audit ledger is tamper-evident within its database sequence. It is not a blockchain, append-only database guarantee, or externally replicated immutable ledger. Audit writes for login, risk, votes, and resolution are deliberately fail-open in the current demo.
+
+## Database
+
+Migrations in `backend/migrations/` are the schema authority.
+
+| Table                  | Why it exists                                 | Relationships and important indexes                                                |
+| ---------------------- | --------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `users`                | identity and TOTP state                       | email unique; referenced by credentials, sessions, requests, votes, keys, events   |
+| `webauthn_credentials` | public WebAuthn material/counter              | FK to users; credential ID unique; index on `user_id`                              |
+| `refresh_tokens`       | hashed opaque refresh values and family state | FK to users; unique hash; indexes on user, family, hash                            |
+| `approval_policies`    | quorum/policy configuration                   | name index; JSONB role/escalation/geofence fields                                  |
+| `approval_requests`    | requester action/state                        | FKs to policy/user; indexes on policy, requester, status and `(status, escalated)` |
+| `approval_votes`       | one decision/signature per voter/request      | FKs; unique request/approver; indexes on request/approver                          |
+| `audit_log`            | hash-linked security entries                  | bigserial order; indexes on creation time/type                                     |
+| `delegations`          | temporary delegate records                    | FKs; indexes on delegate/delegator                                                 |
+| `signing_keys`         | one encrypted signing keypair per user        | user ID is PK/FK                                                                   |
+| `login_events`         | risk/session context                          | FK to users; indexes on user and time                                              |
+
+> [!WARNING]
+> `totp_secret` is currently a plaintext text column on `users`. That is an identified production gap, not a claim of encrypted TOTP storage.
+
+## API overview
+
+All API paths are mounted in `backend/src/app.ts`. Protected endpoints require `Authorization: Bearer <accessToken>`.
+
+<details><summary><strong>Authentication and sessions</strong></summary>
+
+| Method | Route                          | Purpose                               | Auth                    | Request → response                                             |
+| ------ | ------------------------------ | ------------------------------------- | ----------------------- | -------------------------------------------------------------- |
+| POST   | `/api/auth/register/options`   | create registration options/challenge | no                      | `{email}` → WebAuthn creation options                          |
+| POST   | `/api/auth/register/verify`    | verify attestation/store credential   | no                      | `{email,response}` → `{verified,userId}`                       |
+| POST   | `/api/auth/login/options`      | create assertion options/challenge    | no                      | `{email}` → WebAuthn request options                           |
+| POST   | `/api/auth/login/verify`       | verify assertion/risk outcome         | no                      | `{email,response}` → tokens or `{stepUpRequired,pendingToken}` |
+| POST   | `/api/auth/login/step-up`      | verify pending token and TOTP         | pending token body      | `{pendingToken,code}` → token pair                             |
+| POST   | `/api/auth/totp/setup`         | create secret/provisioning URI        | no; current demo design | `{userId}` → `{secret,otpauthUrl}`                             |
+| POST   | `/api/auth/totp/verify`        | verify first/current TOTP             | no; current demo design | `{userId,code}` → `{enabled:true}`                             |
+| POST   | `/api/auth/refresh`            | rotate opaque refresh token           | no                      | `{refreshToken}` → token pair                                  |
+| GET    | `/api/auth/sessions`           | list active refresh families          | bearer                  | → session rows                                                 |
+| DELETE | `/api/auth/sessions/:familyId` | revoke own family                     | bearer                  | → `{revoked:true}`                                             |
+| GET    | `/api/auth/audit`              | list relevant audit entries           | bearer                  | → audit rows                                                   |
+
+</details>
+
+<details><summary><strong>Approvals, ledger, service routes</strong></summary>
+
+| Method   | Route                                    | Purpose                            | Auth   | Request → response                          |
+| -------- | ---------------------------------------- | ---------------------------------- | ------ | ------------------------------------------- |
+| POST/GET | `/api/approval/policies`                 | create/list policies               | bearer | policy JSON → policy row(s)                 |
+| GET      | `/api/approval/policies/:id`             | fetch one policy                   | bearer | → policy or 404                             |
+| POST     | `/api/approval/requests`                 | create request                     | bearer | `{policyId,actionPayload}` → pending row    |
+| POST     | `/api/approval/requests/:id/votes`       | submit decision                    | bearer | `{decision}` → vote, request, quorum result |
+| POST     | `/api/approval/delegations`              | create temporary delegation        | bearer | `{delegateId,expiresAt}` → row              |
+| POST     | `/api/approval/requests/:id/break-glass` | force-approve current demo request | bearer | → updated row                               |
+| GET      | `/api/approval/requests`                 | list own resolved requests         | bearer | → rows                                      |
+| GET      | `/api/approval/requests/pending`         | list own pending requests          | bearer | → rows                                      |
+| GET      | `/api/ledger/receipt/:requestId`         | retrieve own request evidence      | bearer | → receipt or 404                            |
+| GET      | `/health`                                | API/DB health result               | no     | → status and DB state                       |
+
+</details>
+
+## Security boundaries
+
+| Category            | Implemented                                                                 | Demo-only / not implemented                                            |
+| ------------------- | --------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| Password resistance | passkeys replace password entry/storage                                     | recovery lifecycle and multi-credential management                     |
+| Phishing resistance | WebAuthn RP/origin verification                                             | phishing-clone page is educational, not a production phishing test     |
+| Replay controls     | credential counter update; consumed refresh-family detection                | refresh rotation race protection; TOTP one-code replay tracking        |
+| TOTP                | native standards-based verification, Base32 validation, timing-safe compare | authenticated re-enrollment and encrypted secret storage               |
+| Authorization       | bearer JWT subject scoping for sessions/requests/receipts                   | role model, independent reviewers, separation of duties                |
+| Signatures          | Ed25519 signatures plus encrypted stored private keys                       | user-held approval signing/non-repudiation claim                       |
+| Audit               | serialized hash-chain append and verifier script                            | external anchoring, DB immutability, mandatory audit writes            |
+| Risk                | IP/user-agent heuristic and step-up Map                                     | device fingerprinting, distributed rate limit, production risk scoring |
+
+## Testing and deployment
+
+### Tests and operational tools
+
+| Command (from `backend/`) | Purpose                                                                           |
+| ------------------------- | --------------------------------------------------------------------------------- |
+| `npm test`                | Vitest service and route tests; several external/database dependencies are mocked |
+| `npm run typecheck`       | TypeScript compile check without output                                           |
+| `npm run build`           | emits compiled backend JavaScript                                                 |
+| `npm run smoke-test`      | scripted API smoke requests against a running backend                             |
+| `npm run load-test`       | demonstrates current in-memory step-up limit behavior                             |
+| `npm run verify-chain`    | independently recomputes stored audit hashes from PostgreSQL                      |
+| `npm run migrate:up`      | applies `node-pg-migrate` migrations                                              |
+
+From `frontend/`, run `npm run lint` and `npm run build`. The frontend build runs TypeScript build checks before Vite output.
+
+### Deployment
+
+`docker-compose.yml` is a local full-stack convenience configuration. It starts PostgreSQL, Redis, backend, and nginx-served frontend. It is not a hardened production deployment: it exposes local service ports and uses development topology/credentials. A real deployment needs TLS, a secrets manager, private managed data services, environment-specific WebAuthn origin/RP ID configuration, monitoring, backups, and a shared challenge/rate-limit store.
+
+## Limitations, roadmap, and team
+
+### Current limitations
+
+- TOTP setup/reset is not correctly bound to authenticated re-enrollment.
+- Challenges and rate limiting are in memory; they do not scale across replicas.
+- TOTP secrets are plaintext at rest.
+- Access/refresh tokens are script-readable sessionStorage values.
+- Approval policies do not enforce roles/reviewer assignment; self-voting is current demo behavior.
+- Server-held Ed25519 keys produce evidence but not user-controlled approval signatures.
+- Audit records are fail-open and unanchored.
+
+### Practical roadmap
+
+1. Bind factor enrollment to current/recently reauthenticated user identity.
+2. Add server-enforced roles, reviewers, separation of duties, and governed break-glass.
+3. Move challenges/limits to shared TTL-backed state and make rotations/votes transactional.
+4. Encrypt TOTP secrets with independently managed keys; use managed key custody for signing material.
+5. Add external audit checkpoints, monitoring, real integration tests, and hardened deployment infrastructure.
+
+The detailed prioritized plan is [PRODUCTION_GAP_ANALYSIS.md](PRODUCTION_GAP_ANALYSIS.md). The adversarial mentor question set is [REVIEW_QUESTIONS.md](REVIEW_QUESTIONS.md).
+
+### Team
+
+TrustLine was built as a hackathon project. Add contributor names, roles, and contact links here before submission.
+
+## Documentation map
+
+| Document                                                 | Purpose                                                                     |
+| -------------------------------------------------------- | --------------------------------------------------------------------------- |
+| [AUTH_FLOW.md](AUTH_FLOW.md)                             | signup, WebAuthn, native RFC 6238 TOTP, and session flow                    |
+| [PROJECT_ARCHITECTURE.md](PROJECT_ARCHITECTURE.md)       | internal file/function/data-flow handbook                                   |
+| [REVIEW_QUESTIONS.md](REVIEW_QUESTIONS.md)               | adversarial mentor and mock-viva questions                                  |
+| [PRODUCTION_GAP_ANALYSIS.md](PRODUCTION_GAP_ANALYSIS.md) | code-derived production readiness gaps and ranked work                      |
+| [docs/demo-script.md](docs/demo-script.md)               | presentation walkthrough—validate its claims against this README before use |
 
 ## License
 
-No license file is currently included. All rights are reserved unless the repository owner adds a license.
+No license file is currently tracked. Add one before publishing code intended for reuse.
