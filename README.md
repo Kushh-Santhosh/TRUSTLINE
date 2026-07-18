@@ -3,20 +3,63 @@
 > **Passwordless identity, adaptive step-up, and tamper-evident approval evidence—implemented as an inspectable security engineering demonstration.**
 
 [![TypeScript](https://img.shields.io/badge/TypeScript-5%2B-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Node.js](https://img.shields.io/badge/Node.js-20%2B-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org/)
+[![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)](https://react.dev/)
+[![Express](https://img.shields.io/badge/API-Express-000000?logo=express)](https://expressjs.com/)
 [![WebAuthn](https://img.shields.io/badge/Auth-WebAuthn-1a73e8)](https://www.w3.org/TR/webauthn-3/)
 [![PostgreSQL](https://img.shields.io/badge/Data-PostgreSQL-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
 [![Docker Compose](https://img.shields.io/badge/Run-Docker%20Compose-2496ED?logo=docker&logoColor=white)](https://docs.docker.com/compose/)
+[![License](https://img.shields.io/badge/License-Not%20yet%20specified-lightgrey)](#license)
 
 TrustLine is a full-stack TypeScript project for demonstrating how phishing-resistant sign-in, risk-triggered TOTP, approval decisions, and cryptographic receipts can fit into one workflow. It is built for a hackathon and portfolio review: the code favors explicit flows, inspectable primitives, and honest boundaries over unimplemented enterprise claims.
+
+## Why TrustLine?
+
+For a non-technical reader, TrustLine asks a practical question: **how can an organization be confident that the right person signed in, that a sensitive action was intentionally approved, and that the resulting record can be checked later?**
+
+For an engineering reader, it combines three related problems that are often treated separately:
+
+- **Authentication:** passwords are reusable secrets that can be guessed, reused after a breach, or entered into a phishing page. TrustLine uses passkeys, where the authenticator keeps the private key and the service verifies a public-key response bound to the legitimate origin.
+- **Authorization and approval integrity:** a compromised or overly powerful account can still create risky actions. TrustLine models requests, votes, quorum evaluation, signatures, and receipts to make the approval path inspectable.
+- **Auditability:** a database row saying “approved” is weak evidence by itself. TrustLine links audit entries with SHA-256 hashes and exposes the related vote/public-key material in a receipt view.
+
+The result is not a claim to solve every enterprise IAM problem. It is a focused demonstration of why identity assurance, decision integrity, and evidence need to be designed together.
+
+## Highlights
+
+- ✅ Passwordless WebAuthn passkey registration and sign-in
+- ✅ Adaptive TOTP step-up with a native RFC 6238 implementation
+- ✅ Opaque refresh-token families with reuse detection
+- ✅ Policy/request/vote/quorum workflow demonstration
+- ✅ Ed25519 receipt signatures and AES-256-GCM private-key protection
+- ✅ SHA-256 tamper-evident audit chain and verifier script
+- ✅ Fully TypeScript frontend and backend with Docker Compose local stack
+- ✅ Clearly labelled phishing, MFA-fatigue, replay, and mock-security demonstrations
+
+## Documentation hub
+
+| Document                                                 | Read this when you need…                                        |
+| -------------------------------------------------------- | --------------------------------------------------------------- |
+| [README.md](README.md)                                   | a concise product, setup, and implementation overview           |
+| [AUTH_FLOW.md](AUTH_FLOW.md)                             | the exact signup, passkey, TOTP, and session sequence           |
+| [PROJECT_ARCHITECTURE.md](PROJECT_ARCHITECTURE.md)       | file/function/data-store ownership across the codebase          |
+| [REVIEW_QUESTIONS.md](REVIEW_QUESTIONS.md)               | mentor-style challenge questions and mock viva preparation      |
+| [PRODUCTION_GAP_ANALYSIS.md](PRODUCTION_GAP_ANALYSIS.md) | code-derived production limits and prioritized remediation work |
+| [docs/demo-script.md](docs/demo-script.md)               | a judge-facing walkthrough; validate claims against this README |
 
 > [!IMPORTANT]
 > TrustLine is a security demonstration, **not** a production IAM or approval product. The current approval model is requester-scoped; it does not yet contain independent reviewer assignment, role enforcement, recovery codes, distributed challenge storage, or externally anchored audit evidence. See [PRODUCTION_GAP_ANALYSIS.md](PRODUCTION_GAP_ANALYSIS.md) for the code-derived production gaps.
 
 ## Contents
 
-- [What problem does TrustLine solve?](#what-problem-does-trustline-solve)
+- [Why TrustLine?](#why-trustline)
+- [Highlights](#highlights)
+- [Documentation hub](#documentation-hub)
 - [Key features and status](#key-features-and-status)
 - [Architecture](#architecture)
+- [Live demo flow](#live-demo-flow)
+- [Threat model](#threat-model)
+- [Engineering decisions](#engineering-decisions)
 - [Quick start](#quick-start)
 - [Repository walkthrough](#repository-walkthrough)
 - [Authentication](#authentication)
@@ -29,12 +72,6 @@ TrustLine is a full-stack TypeScript project for demonstrating how phishing-resi
 - [Security boundaries](#security-boundaries)
 - [Testing and deployment](#testing-and-deployment)
 - [Limitations, roadmap, and team](#limitations-roadmap-and-team)
-
-## What problem does TrustLine solve?
-
-Passwords are reusable shared secrets: they can be phished, guessed, replayed after a breach, or reused across systems. A plain “approve” button creates a related enterprise problem—an organization may later be unable to show which decision was made, what was signed, or whether the record changed.
-
-TrustLine uses public-key passkeys as the primary sign-in mechanism, asks for TOTP only when its current login heuristic asks for step-up, records approval activity, and exposes a receipt view for resolved requests. It is intentionally clearer than a password-and-OTP prototype: each step names the security property it is meant to demonstrate.
 
 ## Key features and status
 
@@ -73,6 +110,67 @@ flowchart LR
 > [!NOTE]
 > Docker Compose starts Redis for the local stack, but the current tracked application does not import a Redis client. WebAuthn challenges and the step-up limiter are in-process state; this is one reason the repository is not horizontally production-ready.
 
+### Why these technologies?
+
+| Technology     | Selected for TrustLine                                         | Instead of                                    | Trade-off                                                           |
+| -------------- | -------------------------------------------------------------- | --------------------------------------------- | ------------------------------------------------------------------- |
+| React + Vite   | typed component UI and fast local iteration                    | server-rendered UI / larger meta-framework    | client handles browser/session state                                |
+| Express        | explicit, compact route and middleware composition             | NestJS / Fastify                              | fewer built-in architectural conventions                            |
+| TypeScript     | shared type discipline across browser and server               | untyped JavaScript                            | runtime validation is still separately required                     |
+| PostgreSQL     | transactions, foreign keys, indexes, JSONB                     | MongoDB                                       | schema/migration ownership requires care                            |
+| SimpleWebAuthn | maintained WebAuthn ceremony verification                      | hand-written protocol parsing                 | external library dependency, but avoids unsafe custom protocol work |
+| Node `crypto`  | standard library primitives and native RFC 6238 implementation | OTP/crypto utility packages                   | application must maintain well-tested protocol glue                 |
+| Docker Compose | reproducible local multi-service environment                   | manual service setup                          | not a production orchestration platform                             |
+| Pino           | structured Node logging                                        | console logging / heavier observability stack | metrics/tracing still need separate production tooling              |
+| Vitest         | fast TypeScript-oriented unit/route testing                    | Jest / Mocha                                  | critical integrations still need real DB/browser coverage           |
+
+## Live demo flow
+
+```mermaid
+flowchart TD
+  R[1. Register user] --> PK[2. Create passkey]
+  PK --> QR[3. Scan QR with Microsoft Authenticator or compatible app]
+  QR --> L[4. Sign in with passkey]
+  L --> RE[5. Login heuristic evaluates IP and user-agent history]
+  RE -->|Low risk| D[7. Dashboard]
+  RE -->|Medium or high risk| MFA[6. Enter TOTP step-up code]
+  MFA --> D
+  D --> AR[8. Create approval request]
+  AR --> V[9. Approve or deny in current demo model]
+  V --> RC[10. Open resolved receipt]
+  RC --> AC[11. Run audit-chain verification]
+```
+
+The QR flow uses a standard `otpauth://` URI, so Microsoft Authenticator and other RFC 6238-compatible apps can enroll it. The “Approve or deny” step is intentionally requester-scoped in the current demo; it is not a separate human-reviewer workflow.
+
+## Threat model
+
+| Threat                    | Attack                                 | Current mitigation                            | TrustLine feature / honest boundary                                         |
+| ------------------------- | -------------------------------------- | --------------------------------------------- | --------------------------------------------------------------------------- |
+| Credential stuffing       | reused password attempted at login     | no password login path                        | WebAuthn passkeys; no password database                                     |
+| Password database breach  | hash database copied and cracked       | passwords are not stored                      | passkey public credentials only                                             |
+| Password reuse            | a secret from another site is replayed | no shared password secret                     | passkeys are origin-bound credentials                                       |
+| Phishing                  | lookalike page asks for a credential   | RP/origin verification in WebAuthn            | passkey ceremony; phishing page is an educational demo                      |
+| WebAuthn assertion replay | captured assertion is resubmitted      | challenge and credential counter verification | implemented; challenge store is currently in-memory                         |
+| Refresh-token replay      | consumed renewal token is reused       | family revocation                             | opaque hashed token rotation; concurrent-race hardening remains future work |
+| Session hijacking         | bearer token is stolen in browser      | short access-token TTL and family revocation  | sessionStorage remains an identified XSS risk                               |
+| Tampered approval         | vote/decision data is altered          | signature/receipt material and audit records  | signatures are server-held, not user-held approval assertions               |
+| Audit modification        | audit row/hash is changed              | linked SHA-256 hashes and verifier script     | tamper-evident, not externally immutable/anchored                           |
+| Insider manipulation      | creator attempts to approve own action | requester scoping prevents cross-user leakage | independent reviewer/role controls are not yet implemented                  |
+
+## Engineering decisions
+
+| Decision                                | What and why                                                               | Alternative                      | Trade-off                                                      |
+| --------------------------------------- | -------------------------------------------------------------------------- | -------------------------------- | -------------------------------------------------------------- |
+| Passkeys over passwords                 | primary public-key, origin-aware sign-in; avoids reusable password storage | passwords + MFA                  | requires supported authenticators and a recovery design        |
+| TOTP over SMS OTP                       | standards-compatible secondary factor with no telecom dependency           | SMS/email OTP                    | shared-secret factor; current secrets need at-rest encryption  |
+| Ed25519 over RSA                        | compact modern signatures with Node support                                | RSA-PSS / ECDSA                  | current signer is server-held, limiting non-repudiation claims |
+| AES-GCM over CBC                        | encryption plus integrity/authentication tag                               | AES-CBC + separate MAC           | key custody/rotation remains a production concern              |
+| Opaque refresh values over refresh JWTs | server-side lookup/revocation and no embedded trusted claims               | signed refresh JWT               | database lookup/rotation coordination is required              |
+| PostgreSQL over MongoDB                 | relational integrity, transactions, and indexed security records           | document store                   | JSONB flexibility still requires validation                    |
+| Node `crypto` for TOTP                  | native HMAC/CSPRNG/timing-safe comparison; RFC vectors are tested          | OTP package                      | protocol implementation must remain carefully reviewed         |
+| SimpleWebAuthn over manual WebAuthn     | maintained ceremony parser/verifier                                        | custom CBOR/attestation handling | dependency lifecycle must be maintained                        |
+
 ## Screenshots
 
 Screenshots are intentionally not committed in the current repository. Add them under `docs/screenshots/` when available:
@@ -84,6 +182,12 @@ Screenshots are intentionally not committed in the current repository. Add them 
 | Dashboard and owned pending requests     | `docs/screenshots/dashboard.png`                                         |
 | Resolved request receipt                 | `docs/screenshots/dispute.png`                                           |
 | Attack and phishing demonstrations       | `docs/screenshots/attack-demo.png`, `docs/screenshots/phishing-demo.png` |
+
+<!-- Screenshot placeholders: add the files above when assets are available. -->
+
+![Passkey registration placeholder](docs/screenshots/register.png "Add docs/screenshots/register.png")
+![Dashboard placeholder](docs/screenshots/dashboard.png "Add docs/screenshots/dashboard.png")
+![Receipt placeholder](docs/screenshots/dispute.png "Add docs/screenshots/dispute.png")
 
 ## Quick start
 
@@ -212,6 +316,44 @@ sequenceDiagram
 | Email OTP              | email account becomes the security boundary           | Low–medium                     | Not used                        |
 | Authenticator app TOTP | shared secret can be phished/stolen                   | Medium                         | Secondary adaptive step-up only |
 | Passkeys               | requires compatible authenticator and recovery design | High for origin-bound phishing | Primary authentication          |
+
+### Complete login flow
+
+```mermaid
+sequenceDiagram
+  participant B as Browser
+  participant K as Platform authenticator
+  participant A as Express backend
+  participant DB as PostgreSQL
+  participant R as Adaptive Trust Engine
+  participant S as Session service
+
+  Note over B,DB: Registration (once)
+  B->>A: register/options {email}
+  A->>DB: upsert user; load credentials
+  A-->>B: registration challenge/options
+  B->>K: create passkey
+  K-->>B: attestation response
+  B->>A: register/verify {email,response}
+  A->>DB: store credential public key and counter
+
+  Note over B,DB: Login
+  B->>A: login/options {email}
+  A->>DB: load credential IDs
+  A-->>B: authentication challenge/options
+  B->>K: sign challenge
+  K-->>B: assertion response
+  B->>A: login/verify {email,response}
+  A->>DB: verify credential ownership; update counter
+  A->>R: score IP and user-agent history
+  alt medium/high risk
+    A-->>B: five-minute pending token
+    B->>A: login/step-up {pendingToken,TOTP}
+  end
+  A->>S: issue access JWT + opaque refresh token
+  S->>DB: persist refresh-token hash and login event
+  A-->>B: session tokens; navigate to dashboard
+```
 
 ## Step-up authentication
 
@@ -432,7 +574,12 @@ The detailed prioritized plan is [PRODUCTION_GAP_ANALYSIS.md](PRODUCTION_GAP_ANA
 
 ### Team
 
-TrustLine was built as a hackathon project. Add contributor names, roles, and contact links here before submission.
+| Contributor                                          | Role                          | Responsibilities represented in repository history                                   |
+| ---------------------------------------------------- | ----------------------------- | ------------------------------------------------------------------------------------ |
+| [Kushal Santhosh](https://github.com/Kushh-Santhosh) | Project author and maintainer | TrustLine implementation, security flows, UI, documentation, and hackathon delivery  |
+| Kamya Verma                                          | Contributor (Git history)     | Early repository contribution; no GitHub profile link is asserted in this repository |
+
+Contributor attribution is based on local Git history. Update this table with confirmed roles/profile links before a public team submission if needed.
 
 ## Documentation map
 
