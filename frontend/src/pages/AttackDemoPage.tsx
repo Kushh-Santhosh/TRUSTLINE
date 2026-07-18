@@ -149,7 +149,7 @@ export default function AttackDemoPage() {
           </div>
           <h1 className="text-2xl font-semibold tracking-tight text-ink-primary">Security Defences</h1>
           <p className="mt-1 max-w-2xl text-sm leading-6 text-ink-secondary">
-            Controlled demonstration of real-world attack patterns and TrustLine's automated defences.
+            Controlled demonstration of real-world attack patterns and TrustLine&apos;s automated defences.
           </p>
         </div>
 

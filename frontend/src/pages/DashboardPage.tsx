@@ -10,6 +10,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { authedGet, authedPost, authedDel, ApiError } from '../lib/apiClient';
 import { getAccessToken, clearTokens } from '../lib/auth';
+import JudgeMode from '../components/JudgeMode';
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -562,11 +563,11 @@ export default function DashboardPage() {
       </header>
 
       {/* Main content */}
-      <main className="mx-auto max-w-6xl space-y-8 px-4 py-8 sm:px-6 sm:py-10">
+      <main className="mx-auto max-w-6xl space-y-10 px-4 py-8 sm:px-6 sm:py-10">
 
-        <div className="flex flex-col gap-1">
+        <div className="flex flex-col gap-1.5">
           <h1 className="text-xl font-semibold tracking-tight text-ink-primary">Overview</h1>
-          <p className="text-sm text-ink-secondary">Monitor your account activity and respond to requests that need your attention.</p>
+          <p className="text-sm text-ink-secondary">Monitor account activity, evaluate trust continuously, and respond to security events.</p>
         </div>
 
         <section aria-label="Account overview" className="overflow-hidden rounded-xl border border-border bg-surface-elevated shadow-xs">
@@ -886,6 +887,9 @@ export default function DashboardPage() {
             </div>
           </div>
         </section>
+
+        {/* ── Judge Mode (primary showcase — contains Trust Engine, Timeline & Attack Sim) ── */}
+        <JudgeMode />
 
       </main>
     </div>

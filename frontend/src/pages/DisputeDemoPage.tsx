@@ -287,7 +287,7 @@ export default function DisputeDemoPage() {
             <div className="overflow-hidden rounded-xl border border-danger-border bg-danger-muted">
               <div className="flex items-center gap-2 border-b border-danger-border px-5 py-4 sm:px-6">
                 <span className="text-danger text-sm" aria-hidden="true">!</span>
-                <h2 className="text-base font-semibold text-danger">Approver's Claim</h2>
+                <h2 className="text-base font-semibold text-danger">Approver&apos;s Claim</h2>
               </div>
               <div className="px-5 py-5 sm:px-6">
                 <div className="flex items-start gap-4">
@@ -295,11 +295,11 @@ export default function DisputeDemoPage() {
                     <svg className="h-4 w-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="8" cy="5" r="2.5" /><path d="M3.5 14c.4-2.5 2-3.75 4.5-3.75S12.1 11.5 12.5 14" strokeLinecap="round" /></svg>
                   </div>
                   <blockquote className="italic text-ink-secondary text-sm leading-relaxed border-l-2 border-danger/30 pl-4">
-                    "I never approved request{' '}
+                    &ldquo;I never approved request{' '}
                     <code className="not-italic font-mono text-xs bg-surface-elevated px-1.5 py-0.5 rounded border border-border">
                       {shortId(selected.id)}
                     </code>
-                    . I have no record of this. Someone must have acted on my behalf."
+                    . I have no record of this. Someone must have acted on my behalf.&rdquo;
                   </blockquote>
                 </div>
                 <p className="text-xs text-ink-muted mt-3">

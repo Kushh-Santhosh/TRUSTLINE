@@ -304,3 +304,9 @@
   /* No-underline link (overrides base a hover) */
   .no-underline { text-decoration: none !important; }
 }
+
+/* ── Keyframes ─────────────────────────────────────────────────────────────── */
+@keyframes fadeSlideIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0);   }
+}
