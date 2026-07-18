@@ -90,12 +90,12 @@ The result is not a claim to solve every enterprise IAM problem. It is a focused
 
 ```mermaid
 flowchart LR
-  U[User] --> F[React SPA]
-  F -->|JSON / Bearer token| A[Express API]
-  F -->|WebAuthn ceremony| W[Platform authenticator]
-  A --> P[(PostgreSQL)]
-  A --> C[Node crypto\nTOTP · Ed25519 · AES-GCM · SHA-256]
-  A --> S[@simplewebauthn/server]
+  U["User"] --> F["React SPA"]
+  F -->|"JSON bearer token"| A["Express API"]
+  F -->|"WebAuthn ceremony"| W["Platform authenticator"]
+  A --> P["PostgreSQL"]
+  A --> C["Node crypto"]
+  A --> S["SimpleWebAuthn server"]
 ```
 
 | Layer        | Technology                    | Why this choice                                                             | Role in TrustLine                                    |
@@ -128,17 +128,17 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-  R[1. Register user] --> PK[2. Create passkey]
-  PK --> QR[3. Scan QR with Microsoft Authenticator or compatible app]
-  QR --> L[4. Sign in with passkey]
-  L --> RE[5. Login heuristic evaluates IP and user-agent history]
-  RE -->|Low risk| D[7. Dashboard]
-  RE -->|Medium or high risk| MFA[6. Enter TOTP step-up code]
+  R["1 Register user"] --> PK["2 Create passkey"]
+  PK --> QR["3 Scan QR in authenticator app"]
+  QR --> L["4 Sign in with passkey"]
+  L --> RE["5 Evaluate login context"]
+  RE -->|"Low risk"| D["7 Dashboard"]
+  RE -->|"Medium or high risk"| MFA["6 Enter TOTP code"]
   MFA --> D
-  D --> AR[8. Create approval request]
-  AR --> V[9. Approve or deny in current demo model]
-  V --> RC[10. Open resolved receipt]
-  RC --> AC[11. Run audit-chain verification]
+  D --> AR["8 Create approval request"]
+  AR --> V["9 Approve or deny"]
+  V --> RC["10 Open receipt"]
+  RC --> AC["11 Verify audit chain"]
 ```
 
 The QR flow uses a standard `otpauth://` URI, so Microsoft Authenticator and other RFC 6238-compatible apps can enroll it. The “Approve or deny” step is intentionally requester-scoped in the current demo; it is not a separate human-reviewer workflow.
@@ -248,12 +248,12 @@ npm run dev
 
 ```mermaid
 flowchart TD
-  FE[frontend/src] --> Pages[pages: routed user flows]
-  FE --> Lib[lib: API and session helpers]
-  BE[backend/src] --> Routes[routes: HTTP controllers]
-  BE --> Services[services: security and persistence logic]
-  BE --> Migrations[migrations: PostgreSQL schema]
-  Routes --> Services --> DB[(PostgreSQL)]
+  FE["frontend source"] --> Pages["pages"]
+  FE --> Lib["client libraries"]
+  BE["backend source"] --> Routes["routes"]
+  BE --> Services["services"]
+  BE --> Migrations["migrations"]
+  Routes --> Services --> DB["PostgreSQL"]
 ```
 
 | Directory/file             | Why it exists                         | How it interacts                                                                     |
@@ -298,13 +298,13 @@ sequenceDiagram
   participant B as Browser
   participant A as API
   participant K as Authenticator
-  B->>A: POST /api/auth/login/options {email}
-  A->>A: create and store challenge; load user credentials
-  A-->>B: PublicKeyCredentialRequestOptionsJSON
-  B->>K: startAuthentication(options)
-  K-->>B: signed assertion
-  B->>A: POST /api/auth/login/verify {email,response}
-  A->>A: verify challenge + origin + RP ID + public key + counter
+  B->>A: Request login options
+  A->>A: Create challenge
+  A-->>B: Return WebAuthn options
+  B->>K: Request assertion
+  K-->>B: Return assertion
+  B->>A: Submit assertion
+  A->>A: Verify assertion
 ```
 
 ### Authentication comparison
@@ -328,31 +328,31 @@ sequenceDiagram
   participant R as Adaptive Trust Engine
   participant S as Session service
 
-  Note over B,DB: Registration (once)
-  B->>A: register/options {email}
-  A->>DB: upsert user; load credentials
-  A-->>B: registration challenge/options
+  Note over B,DB: Registration
+  B->>A: Request registration options
+  A->>DB: Create or load user
+  A-->>B: Return registration options
   B->>K: create passkey
   K-->>B: attestation response
-  B->>A: register/verify {email,response}
-  A->>DB: store credential public key and counter
+  B->>A: Submit attestation
+  A->>DB: Store public credential
 
   Note over B,DB: Login
-  B->>A: login/options {email}
-  A->>DB: load credential IDs
-  A-->>B: authentication challenge/options
+  B->>A: Request login options
+  A->>DB: Load credential IDs
+  A-->>B: Return authentication options
   B->>K: sign challenge
   K-->>B: assertion response
-  B->>A: login/verify {email,response}
-  A->>DB: verify credential ownership; update counter
-  A->>R: score IP and user-agent history
-  alt medium/high risk
-    A-->>B: five-minute pending token
-    B->>A: login/step-up {pendingToken,TOTP}
+  B->>A: Submit assertion
+  A->>DB: Update credential counter
+  A->>R: Score login context
+  alt Medium or high risk
+    A-->>B: Return pending token
+    B->>A: Submit TOTP code
   end
-  A->>S: issue access JWT + opaque refresh token
-  S->>DB: persist refresh-token hash and login event
-  A-->>B: session tokens; navigate to dashboard
+  A->>S: Issue session tokens
+  S->>DB: Store token hash and login event
+  A-->>B: Return session tokens
 ```
 
 ## Step-up authentication
@@ -378,16 +378,16 @@ sequenceDiagram
   participant B as LoginPage
   participant A as API
   participant T as totp.service
-  B->>A: passkey assertion verified
-  A->>A: score IP + user-agent history
-  alt medium/high risk
-    A-->>B: pending JWT (5 minutes)
-    B->>A: POST /api/auth/login/step-up {pendingToken, code}
-    A->>T: verifyCode(userId, code)
-    T-->>A: valid / invalid
-    A-->>B: access + refresh tokens
+  B->>A: Passkey login verified
+  A->>A: Score login context
+  alt Medium or high risk
+    A-->>B: Return pending token
+    B->>A: Submit TOTP code
+    A->>T: Verify TOTP code
+    T-->>A: Return result
+    A-->>B: Return session tokens
   else low risk
-    A-->>B: access + refresh tokens
+    A-->>B: Return session tokens
   end
 ```
 
@@ -418,15 +418,15 @@ Protected routes use `requireAuth`, which verifies an access JWT and attaches `r
 
 ```mermaid
 flowchart LR
-  C[Authenticated user] --> P[Create/find policy]
-  P --> R[Create pending request\npolicy version number stored]
-  R --> V[Submit approve/deny vote]
-  V --> SIG[Server Ed25519 signature]
-  SIG --> Q[Deterministic quorum evaluation]
-  Q -->|pending| R
-  Q -->|approved / denied| RES[Set resolved status]
-  V --> AUD[Append audit event, fail-open]
-  RES --> REC[Receipt: votes, public keys, audit entries]
+  C["Authenticated user"] --> P["Create policy"]
+  P --> R["Create pending request"]
+  R --> V["Submit vote"]
+  V --> SIG["Server signature"]
+  SIG --> Q["Evaluate quorum"]
+  Q -->|"Pending"| R
+  Q -->|"Approved or denied"| RES["Set resolved status"]
+  V --> AUD["Append audit event"]
+  RES --> REC["Build receipt"]
 ```
 
 | Step      | Why it exists                                | Current implementation                                                       |
@@ -450,10 +450,10 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-  G[GENESIS] --> E1[entry 1\nthis_hash = SHA-256(prev + JSON payload)]
-  E1 --> E2[entry 2\nprev_hash = entry 1 hash]
-  E2 --> EN[entry n]
-  EN --> V[verifyChain.ts recomputes links]
+  G["Genesis"] --> E1["Entry 1 hash"]
+  E1 --> E2["Entry 2 hash"]
+  E2 --> EN["Later entries"]
+  EN --> V["Verify chain script"]
 ```
 
 The audit ledger is tamper-evident within its database sequence. It is not a blockchain, append-only database guarantee, or externally replicated immutable ledger. Audit writes for login, risk, votes, and resolution are deliberately fail-open in the current demo.
