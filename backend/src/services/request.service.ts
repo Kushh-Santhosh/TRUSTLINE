@@ -1,14 +1,5 @@
-/**
- * M5.2 — Approval request service
- * M5.4 — Vote submission with quorum evaluation
- * M5.5 — Delegation expiry check integrated into vote eligibility
- * M5.7 — Break-glass emergency access
- * M6.3 — Server-side Ed25519 signature on every vote
- * M6.5 — Audit logging for vote and resolution events
- * Creates pending approval requests against a policy,
- * snapshotting the policy version at creation time.
- * Handles vote insertion, status transitions, and emergency overrides.
- */
+// Approval request creation, vote submission, quorum evaluation, and break-glass access.
+// Policy version is snapshotted at request creation time.
 import pool from '../db/pool';
 import { evaluateQuorum, type QuorumPolicy, type Vote } from './quorum.service';
 import { hasAnyDelegation, isActiveDelegate } from './delegation.service';

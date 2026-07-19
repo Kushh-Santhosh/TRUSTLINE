@@ -1,15 +1,11 @@
-/**
- * M5.3 — Quorum evaluation service
- * Pure, deterministic function — NO database access.
- * Reused by M5.4 vote submission and any future escalation/resolution logic.
- *
- * Supported quorum types (matching approval_policies.quorum_type values):
- *   n_of_m        — approved once quorum_n approve-votes exist;
- *                   denied once remaining votes can't reach quorum_n; else pending.
- *   single_senior — approved on first approve; denied on first deny.
- *   role_weighted — role eligibility enforced at vote submission;
- *                   quorum resolved by count (n_of_m semantics on this surface).
- */
+// Quorum evaluation — pure, deterministic, no database access.
+//
+// Supported quorum_type values:
+//   n_of_m        — approved when quorum_n approve-votes exist;
+//                   denied when remaining votes can't reach quorum_n.
+//   single_senior — approved on first approve, denied on first deny.
+//   role_weighted — role eligibility checked at submission; resolved by count
+//                   using n_of_m semantics.
 
 // ── Types ─────────────────────────────────────────────────────────────────
 

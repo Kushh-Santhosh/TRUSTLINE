@@ -14,47 +14,32 @@ import pool from '../db/pool';
 import config from '../lib/config';
 import logger from '../lib/logger';
 
-// Short-lived pending token TTL (5 minutes) — bridges WebAuthn success → TOTP step-up
 const STEP_UP_TTL = '5m';
-const STEP_UP_PURPOSE = 'step_up' as const;
 
-// ── Structured error logger ────────────────────────────────────────────────
-function logAuthError(endpoint: string, err: unknown, ctx: Record<string, unknown> = {}): string {
-  const isError  = err instanceof Error;
-  const message  = isError ? err.message : String(err);
-  const code     = (err && typeof err === 'object' && 'code' in err)
+function authError(endpoint: string, err: unknown, ctx: Record<string, unknown> = {}): string {
+  const message = err instanceof Error ? err.message : String(err);
+  const code = (err && typeof err === 'object' && 'code' in err)
     ? String((err as Record<string, unknown>).code)
     : undefined;
-  const isConnRefused = code === 'ECONNREFUSED' || message.includes('ECONNREFUSED');
+  const isDbDown = code === 'ECONNREFUSED' || message.includes('ECONNREFUSED');
 
   logger.error(
-    {
-      endpoint,
-      errMessage: message,
-      errCode:    code,
-      errStack:   isError ? err.stack : undefined,
-      ...(isConnRefused ? { hint: 'PostgreSQL is not reachable — run: docker compose up -d postgres redis' } : {}),
-      ...ctx,
-    },
-    isConnRefused
-      ? `[auth] ${endpoint}: database not reachable (ECONNREFUSED) — start PostgreSQL first`
-      : `[auth] ${endpoint}: unexpected error`
+    { endpoint, err, isDbDown, ...ctx },
+    isDbDown
+      ? `[auth] ${endpoint}: database unreachable — start PostgreSQL first`
+      : `[auth] ${endpoint}: error`
   );
 
-  // Return a user-safe message (include original for dev; redact in prod if needed)
-  return isConnRefused ? `database not reachable — is PostgreSQL running?` : message;
+  return isDbDown ? 'database not reachable — is PostgreSQL running?' : message;
 }
 
 const router = Router();
 
-// ── POST /api/auth/register/options ───────────────────────────────────────
-// Body: { email: string }
-// Returns: PublicKeyCredentialCreationOptionsJSON
+// POST /api/auth/register/options
 router.post(
   '/register/options',
   async (req: Request, res: Response): Promise<void> => {
     const { email } = req.body as { email?: string };
-    logger.info({ endpoint: 'register/options', email }, '[auth] register/options: incoming');
 
     if (!email || typeof email !== 'string') {
       res.status(400).json({ error: 'email is required' });
@@ -62,28 +47,20 @@ router.post(
     }
 
     try {
-      logger.info({ email }, '[auth] register/options: calling generateRegistrationOptionsForUser');
       const options = await generateRegistrationOptionsForUser(email.trim().toLowerCase());
-      logger.info({ email, challengeLen: options.challenge.length }, '[auth] register/options: success');
       res.json(options);
     } catch (err) {
-      const message = logAuthError('register/options', err, { email });
+      const message = authError('register/options', err, { email });
       res.status(500).json({ error: message });
     }
   }
 );
 
-// ── POST /api/auth/register/verify ────────────────────────────────────────
-// Body: { email: string, response: RegistrationResponseJSON }
-// Returns: { verified: true }
+// POST /api/auth/register/verify
 router.post(
   '/register/verify',
   async (req: Request, res: Response): Promise<void> => {
-    const { email, response } = req.body as {
-      email?: string;
-      response?: unknown;
-    };
-    logger.info({ endpoint: 'register/verify', email }, '[auth] register/verify: incoming');
+    const { email, response } = req.body as { email?: string; response?: unknown };
 
     if (!email || typeof email !== 'string') {
       res.status(400).json({ error: 'email is required' });
@@ -95,31 +72,24 @@ router.post(
     }
 
     try {
-      logger.info({ email }, '[auth] register/verify: calling verifyRegistration');
       const { userId } = await verifyRegistration(
         email.trim().toLowerCase(),
         response as Parameters<typeof verifyRegistration>[1]
       );
-      logger.info({ email }, '[auth] register/verify: success');
       res.json({ verified: true, userId });
     } catch (err) {
-      const isError = err instanceof Error;
-      const message = isError && err.message ? err.message : 'verification failed';
-      logAuthError('register/verify', err, { email });
+      const message = authError('register/verify', err, { email });
       const status = message.includes('no pending challenge') ? 400 : 422;
       res.status(status).json({ error: message });
     }
   }
 );
 
-// ── POST /api/auth/login/options ──────────────────────────────────────────
-// Body: { email: string }
-// Returns: PublicKeyCredentialRequestOptionsJSON
+// POST /api/auth/login/options
 router.post(
   '/login/options',
   async (req: Request, res: Response): Promise<void> => {
     const { email } = req.body as { email?: string };
-    logger.info({ endpoint: 'login/options', email }, '[auth] login/options: incoming');
 
     if (!email || typeof email !== 'string') {
       res.status(400).json({ error: 'email is required' });
@@ -127,30 +97,23 @@ router.post(
     }
 
     try {
-      logger.info({ email }, '[auth] login/options: calling generateLoginOptionsForUser');
       const options = await generateLoginOptionsForUser(email.trim().toLowerCase());
-      logger.info({ email, challengeLen: options.challenge.length }, '[auth] login/options: success');
       res.json(options);
     } catch (err) {
-      const raw = err instanceof Error && err.message ? err.message : 'internal error';
-      const message = logAuthError('login/options', err, { email });
-      const status = raw.includes('no credentials') ? 404 : 500;
+      const message = authError('login/options', err, { email });
+      const status = message.includes('no credentials') ? 404 : 500;
       res.status(status).json({ error: message });
     }
   }
 );
 
-// ── POST /api/auth/login/verify ──────────────────────────────────────────
-// Body: { email: string, response: AuthenticationResponseJSON }
+// POST /api/auth/login/verify
 // Low-risk  → 200 { accessToken, refreshToken }
-// Medium/high risk → 200 { stepUpRequired: true, method: 'totp', pendingToken: string }
+// Medium/high risk → 200 { stepUpRequired: true, method: 'totp', pendingToken }
 router.post(
   '/login/verify',
   async (req: Request, res: Response): Promise<void> => {
-    const { email, response } = req.body as {
-      email?: string;
-      response?: unknown;
-    };
+    const { email, response } = req.body as { email?: string; response?: unknown };
 
     if (!email || typeof email !== 'string') {
       res.status(400).json({ error: 'email is required' });
@@ -164,60 +127,39 @@ router.post(
     const ip = req.ip;
     const userAgent = req.headers['user-agent'] as string | undefined;
 
-    logger.info({ endpoint: 'login/verify', email }, '[auth] login/verify: incoming');
-
     try {
-      logger.info({ email }, '[auth] login/verify: calling verifyLogin');
       const userId = await verifyLogin(
         email.trim().toLowerCase(),
         response as Parameters<typeof verifyLogin>[1]
       );
-      logger.info({ email, userId }, '[auth] login/verify: passkey verified');
 
-      // M7.3 — Score the login risk before deciding whether to issue tokens
-      logger.info({ userId }, '[auth] login/verify: scoring risk');
       const { score } = await scoreLoginRisk(userId, ip, userAgent);
-      logger.info({ userId, score }, '[auth] login/verify: risk score');
 
       if (score === 'medium' || score === 'high') {
-        // Issue a short-lived pending token so the step-up endpoint
-        // knows which user completed WebAuthn without exposing userId in plaintext.
         const pendingToken = jwt.sign(
-          { sub: userId, purpose: STEP_UP_PURPOSE, ip, userAgent },
+          { sub: userId, purpose: 'step_up', ip, userAgent },
           config.JWT_SECRET,
           { expiresIn: STEP_UP_TTL }
         );
-        logger.info({ userId, score }, '[auth] login/verify: step-up required');
         res.json({ stepUpRequired: true, method: 'totp', pendingToken });
         return;
       }
 
-      // Low risk — issue full session immediately
-      logger.info({ userId }, '[auth] login/verify: issuing session (low risk)');
       const tokens = await issueSession(userId, ip, userAgent);
-      logger.info({ userId }, '[auth] login/verify: session issued');
       res.json(tokens);
     } catch (err) {
-      const isError = err instanceof Error;
-      const message = isError && err.message ? err.message : 'verification failed';
-      logAuthError('login/verify', err, { email });
+      const message = authError('login/verify', err, { email });
       const status = message.includes('no pending') ? 400 : 401;
       res.status(status).json({ error: message });
     }
   }
 );
 
-// ── POST /api/auth/login/step-up ──────────────────────────────────────────
-// Body: { pendingToken: string, code: string }
-// Returns: { accessToken: string, refreshToken: string } on success
-// Verifies the TOTP code then issues a full session.
+// POST /api/auth/login/step-up
 router.post(
   '/login/step-up',
   async (req: Request, res: Response): Promise<void> => {
-    const { pendingToken, code } = req.body as {
-      pendingToken?: string;
-      code?: string;
-    };
+    const { pendingToken, code } = req.body as { pendingToken?: string; code?: string };
 
     if (!pendingToken || typeof pendingToken !== 'string') {
       res.status(400).json({ error: 'pendingToken is required' });
@@ -229,9 +171,8 @@ router.post(
     }
 
     try {
-      // M8.2 — Rate-limit check: decode token without verifying signature to get userId,
-      // then record the attempt. If >3 in 60 s → 429 immediately.
-      const decoded0 = jwt.decode(pendingToken) as { sub?: string; purpose?: string } | null;
+      // Rate-limit check: decode without verifying to get userId and record the attempt.
+      const decoded0 = jwt.decode(pendingToken) as { sub?: string } | null;
       const candidateUserId = decoded0?.sub ?? '';
       if (candidateUserId) {
         const blocked = recordStepUpAttempt(candidateUserId);
@@ -241,7 +182,6 @@ router.post(
         }
       }
 
-      // 1. Full JWT verify (checks signature + expiry)
       const decoded = jwt.verify(pendingToken, config.JWT_SECRET) as {
         sub: string;
         purpose: string;
@@ -249,25 +189,18 @@ router.post(
         userAgent?: string;
       };
 
-      if (decoded.purpose !== STEP_UP_PURPOSE) {
+      if (decoded.purpose !== 'step_up') {
         res.status(401).json({ error: 'invalid pending token' });
         return;
       }
 
       const userId = decoded.sub;
-
-      // 2. Verify TOTP code via existing totp.service
       await verifyCode(userId, code);
 
-      // 3. TOTP passed — issue full session
-      const tokens = await issueSession(
-        userId,
-        decoded.ip,
-        decoded.userAgent
-      );
+      const tokens = await issueSession(userId, decoded.ip, decoded.userAgent);
       res.json(tokens);
     } catch (err) {
-      const message = err instanceof Error && err.message ? err.message : 'step-up failed';
+      const message = err instanceof Error ? err.message : 'step-up failed';
       const status =
         message.includes('invalid') || message.includes('expired') || message.includes('TOTP')
           ? 401
@@ -277,10 +210,7 @@ router.post(
   }
 );
 
-// ── POST /api/auth/totp/setup ──────────────────────────────────────────────
-// Body: { userId: string }
-// Returns: { secret: string, otpauthUrl: string }
-// Note: auth middleware applied in M4.9 — userId accepted directly for now.
+// POST /api/auth/totp/setup
 router.post(
   '/totp/setup',
   async (req: Request, res: Response): Promise<void> => {
@@ -295,16 +225,14 @@ router.post(
       const payload = await generateSecretForUser(userId);
       res.json(payload);
     } catch (err) {
-      const message = err instanceof Error && err.message ? err.message : 'internal error';
+      const message = err instanceof Error ? err.message : 'internal error';
       const status = message === 'user not found' ? 404 : 500;
       res.status(status).json({ error: message });
     }
   }
 );
 
-// ── POST /api/auth/totp/verify ─────────────────────────────────────────────
-// Body: { userId: string, code: string }
-// Returns: { enabled: true }
+// POST /api/auth/totp/verify
 router.post(
   '/totp/verify',
   async (req: Request, res: Response): Promise<void> => {
@@ -323,21 +251,18 @@ router.post(
       await verifyCode(userId, code.trim());
       res.json({ enabled: true });
     } catch (err) {
-      const message = err instanceof Error && err.message ? err.message : 'verification failed';
+      const message = err instanceof Error ? err.message : 'verification failed';
       const status =
-        message === 'user not found' ? 404
+        message === 'user not found'     ? 404
         : message.includes('not set up') ? 400
-        : message === 'invalid TOTP code' ? 422
+        : message === 'invalid TOTP code'? 422
         : 500;
       res.status(status).json({ error: message });
     }
   }
 );
 
-// ── POST /api/auth/refresh ───────────────────────────────────────────────
-// Body: { refreshToken: string }
-// Returns: { accessToken: string, refreshToken: string }
-// Reuse detected: 401 + full family revoked
+// POST /api/auth/refresh — rotates refresh token; replay → 401 + full family revoked
 router.post(
   '/refresh',
   async (req: Request, res: Response): Promise<void> => {
@@ -352,20 +277,18 @@ router.post(
       const tokens = await rotateRefreshToken(refreshToken);
       res.json(tokens);
     } catch (err) {
-      const message = err instanceof Error && err.message ? err.message : 'token rotation failed';
+      const message = err instanceof Error ? err.message : 'token rotation failed';
       const status =
-        message === 'invalid refresh token' ? 401
-        : message === 'refresh token expired' ? 401
-        : message.includes('reuse detected') ? 401
+        message === 'invalid refresh token'     ? 401
+        : message === 'refresh token expired'   ? 401
+        : message.includes('reuse detected')    ? 401
         : 500;
       res.status(status).json({ error: message });
     }
   }
 );
 
-// ── GET /api/auth/sessions ────────────────────────────────────────────────
-// Returns active (non-revoked, non-expired) refresh token families for the
-// current user, joined with their most recent login_event for device context.
+// GET /api/auth/sessions — active token families for the current user
 router.get(
   '/sessions',
   requireAuth,
@@ -412,8 +335,48 @@ router.get(
   }
 );
 
-// ── DELETE /api/auth/sessions/:familyId ──────────────────────────────────
-// Revokes all tokens in the specified family for the current user.
+// GET /api/auth/security-status — authentication enrollment state for the current user.
+// This is intentionally read-only and returns only state already persisted in users
+// and webauthn_credentials; it does not alter login, session, or approval behavior.
+router.get(
+  '/security-status',
+  requireAuth,
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { rows } = await pool.query<{
+        passkey_registered: boolean;
+        mfa_enabled: boolean;
+      }>(
+        `SELECT
+           EXISTS (
+             SELECT 1 FROM webauthn_credentials WHERE user_id = u.id
+           ) AS passkey_registered,
+           u.totp_enabled AS mfa_enabled
+         FROM users u
+         WHERE u.id = $1`,
+        [req.userId as string]
+      );
+
+      if (!rows[0]) {
+        res.status(404).json({ error: 'user not found' });
+        return;
+      }
+
+      res.json({
+        passkeyRegistered: rows[0].passkey_registered,
+        mfaEnabled: rows[0].mfa_enabled,
+        // Every authenticated dashboard session is established through the
+        // passkey login flow. TOTP is an adaptive step-up, not a replacement.
+        currentAuthenticationMethod: 'Passkey',
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'internal error';
+      res.status(500).json({ error: message });
+    }
+  }
+);
+
+// DELETE /api/auth/sessions/:familyId — revokes all tokens in a family
 router.delete(
   '/sessions/:familyId',
   requireAuth,
@@ -439,9 +402,7 @@ router.delete(
   }
 );
 
-// ── GET /api/auth/audit ───────────────────────────────────────────────────
-// Returns recent audit log entries whose payload references the current userId.
-// Limit: 50 most recent entries.
+// GET /api/auth/audit — recent audit log entries for the current user (last 50)
 router.get(
   '/audit',
   requireAuth,

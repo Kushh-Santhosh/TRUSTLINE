@@ -1,11 +1,3 @@
-/**
- * M5.1 — Approval policy routes
- * M5.2 — Approval request creation
- * M5.4 — Vote submission
- * M5.5 — Delegation management
- * M5.7 — Break-glass emergency access
- * All endpoints protected by requireAuth middleware.
- */
 import { Router, type Request, type Response } from 'express';
 import { requireAuth } from '../middleware/requireAuth';
 import pool from '../db/pool';

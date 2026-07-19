@@ -1,20 +1,10 @@
-/**
- * M6.4 — Hash-chained audit log writer
- * Appends tamper-evident entries to the audit_log table.
- *
- * Chain invariant:
- *   this_hash = sha256( prev_hash + JSON.stringify(payload) )
- *
- * Genesis handling:
- *   The first entry has no predecessor; prev_hash defaults to the
- *   fixed sentinel string 'GENESIS'.
- *
- * Atomicity:
- *   Each append runs inside a serializable transaction so that
- *   concurrent writers cannot produce duplicate or broken links.
- *
- * Not wired into any other service yet — that is M6.5.
- */
+// Hash-chained audit log writer.
+//
+// Chain invariant: this_hash = sha256( prev_hash + JSON.stringify(payload) )
+//
+// Genesis handling: the first entry's prev_hash is the sentinel 'GENESIS'.
+// Atomicity: each append runs in a serializable transaction to prevent
+// concurrent writers from producing duplicate or broken links.
 import { createHash } from 'crypto';
 import pool from '../db/pool';
 

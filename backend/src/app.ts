@@ -1,27 +1,22 @@
 import express from 'express';
 import cors, { type CorsOptions } from 'cors';
 import pinoHttp from 'pino-http';
+import pool from './db/pool';
 import logger from './lib/logger';
 import config from './lib/config';
 import { errorHandler } from './middleware/errorHandler';
 import authRouter from './routes/auth.routes';
 import approvalRouter from './routes/approval.routes';
 import ledgerRouter from './routes/ledger.routes';
-import riskRouter from './routes/risk.routes';
 
 const app = express();
 
-// Request logging — must be first
 app.use(pinoHttp({ logger }));
-
-// Body parsing
 app.use(express.json());
 
-// CORS — honors FRONTEND_ORIGIN and accepts both local Vite development ports.
 const corsOptions: CorsOptions = {
   credentials: true,
   origin(origin, callback) {
-    // Requests without an Origin header (health checks, curl, server-to-server) are safe.
     if (!origin || config.FRONTEND_ORIGINS.includes(origin)) {
       callback(null, true);
       return;
@@ -32,12 +27,8 @@ const corsOptions: CorsOptions = {
 
 app.use(cors(corsOptions));
 
-import pool from './db/pool';
-
-// Health check — do not remove
-// Returns { status: 'ok', db: 'ok' } when fully healthy.
-// Returns { status: 'ok', db: 'error', dbError: '...' } when DB is unreachable.
-// This makes dependency failures visible without crashing the server.
+// Health check — returns { status: 'ok', db: 'ok' } when healthy,
+// or { status: 'ok', db: 'error', dbError: '...' } when DB is unreachable.
 app.get('/health', async (_req, res) => {
   let db: 'ok' | 'error' = 'ok';
   let dbError: string | undefined;
@@ -52,13 +43,10 @@ app.get('/health', async (_req, res) => {
   res.json({ status: 'ok', db, ...(dbError ? { dbError } : {}) });
 });
 
-// API routers
 app.use('/api/auth', authRouter);
 app.use('/api/approval', approvalRouter);
 app.use('/api/ledger', ledgerRouter);
-app.use('/api/risk', riskRouter);
 
-// Centralized error handler — must be last
 app.use(errorHandler);
 
 export default app;

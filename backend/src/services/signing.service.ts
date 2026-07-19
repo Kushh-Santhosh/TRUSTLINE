@@ -1,15 +1,6 @@
-/**
- * M6.2 — Signing service
- * Signs approval-vote payloads with the approver's Ed25519 private key.
- * Verifies signatures against a stored public key.
- *
- * Not wired into any route yet — that happens in M6.3.
- *
- * Canonical serialisation: keys sorted alphabetically before JSON.stringify
- * to guarantee the same byte sequence regardless of object construction order.
- *
- * Signature encoding: base64 (URL-unsafe) — compact, suitable for DB storage.
- */
+// Canonical serialisation: keys sorted alphabetically before JSON.stringify
+// guarantees the same byte sequence regardless of object construction order.
+// Signatures are base64-encoded for DB storage.
 import { sign as cryptoSign, verify as cryptoVerify } from 'crypto';
 import {
   decryptPrivateKeyWithMigration,
@@ -45,7 +36,6 @@ export async function sign(userId: string, payload: object): Promise<string> {
     await updateEncryptedPrivateKey(userId, encryptPrivateKey(privateKeyPem));
     logger.info({ userId }, 'signing: migrated encrypted private key to active configuration');
   }
-  logger.info({ userId, needsReencryption }, 'signing: private key decrypted for approval vote');
 
   // 2. Sign canonical payload
   const data = canonicalize(payload);

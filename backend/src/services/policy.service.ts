@@ -1,7 +1,4 @@
-/**
- * M5.1 — Approval policy service
- * CRUD operations for the approval_policies table.
- */
+// CRUD operations for the approval_policies table.
 import pool from '../db/pool';
 
 // ── Types ─────────────────────────────────────────────────────────────────

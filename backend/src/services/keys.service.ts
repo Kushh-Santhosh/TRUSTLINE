@@ -1,11 +1,6 @@
-/**
- * M6.1 — Keys service
- * Generates Ed25519 signing keypairs for approvers.
- * Public key stored in plaintext PEM.
- * Private key encrypted with AES-256-GCM using the configured signing-key
- * encryption secret. Existing development records can be migrated from a
- * configured previous secret on their next successful use.
- */
+// Ed25519 signing keypair management.
+// Private keys are stored AES-256-GCM encrypted. Existing records can be
+// migrated from a configured previous secret on their next successful use.
 import { createHash, generateKeyPairSync, createCipheriv, createDecipheriv, randomBytes } from 'crypto';
 import pool from '../db/pool';
 import config from '../lib/config';
@@ -70,9 +65,8 @@ export function decryptPrivateKeyWithMigration(encrypted: string): {
   }
 }
 
-// ── generateKeypairForUser ────────────────────────────────────────────────
-// Called from verifyRegistration (M6.1) after a successful WebAuthn ceremony.
-// Idempotent: if a key already exists for the user it is left unchanged.
+// generateKeypairForUser — called from verifyRegistration after a successful
+// WebAuthn ceremony. Idempotent: if a key already exists it is left unchanged.
 export async function generateKeypairForUser(userId: string): Promise<void> {
   // 1. Generate Ed25519 keypair
   const { publicKey, privateKey } = generateKeyPairSync('ed25519', {

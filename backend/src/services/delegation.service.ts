@@ -1,7 +1,4 @@
-/**
- * M5.5 — Delegation service
- * Manages temporary approver-to-approver delegations with hard expiry.
- */
+// Temporary approver-to-approver delegation management with hard expiry.
 import pool from '../db/pool';
 
 // ── Types ─────────────────────────────────────────────────────────────────

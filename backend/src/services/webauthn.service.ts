@@ -1,7 +1,5 @@
-/**
- * WebAuthn service — M4.1: registration options, M4.2: registration verify
- * Uses @simplewebauthn/server v13.
- */
+// WebAuthn registration and authentication service.
+// Uses @simplewebauthn/server v13.
 import {
   generateRegistrationOptions,
   verifyRegistrationResponse,
@@ -24,9 +22,8 @@ const RP_NAME = 'TrustLine';
 // For local dev: 'localhost'. In production, set via env.
 const RP_ID = process.env.WEBAUTHN_RP_ID ?? 'localhost';
 
-// ── In-memory challenge store ──────────────────────────────────────────────
-// Maps email → base64url-encoded challenge.
-// Good enough for dev; replace with Redis in production (M7 hardening).
+// In-memory challenge store: maps email → base64url-encoded challenge.
+// NOTE: resets on server restart; wire to a persistent store for production.
 const challengeStore = new Map<string, string>();
 
 export { challengeStore };
@@ -133,8 +130,7 @@ export async function verifyRegistration(
   return { userId: rows[0].id };
 }
 
-// ── Login challenge store (separate from registration challenge store) ─────
-// Maps email → base64url-encoded authentication challenge.
+// Separate challenge store for authentication (distinct from registration).
 const loginChallengeStore = new Map<string, string>();
 
 export { loginChallengeStore };

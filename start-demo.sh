@@ -12,8 +12,8 @@
 #
 # Requirements:
 #   - Docker with the Compose plugin (docker compose v2) or Docker Desktop
-#   - .env file at the repo root (copy from backend/.env.example):
-#       cp backend/.env.example .env  # then fill in JWT_SECRET etc.
+#   - backend/.env (copy from backend/.env.example):
+#       cp backend/.env.example backend/.env  # then fill in JWT_SECRET etc.
 # ─────────────────────────────────────────────────────────────────────────────
 
 set -euo pipefail
@@ -74,12 +74,13 @@ fi
 success "Docker $(docker --version | awk '{print $3}' | tr -d ',')"
 success "Compose: $($COMPOSE_CMD version --short 2>/dev/null || echo 'v1')"
 
-# ── .env guard ─────────────────────────────────────────────────────────────
-if [[ ! -f ".env" ]]; then
-  warn "No .env file found at repo root."
-  warn "Creating one from backend/.env.example with placeholder values."
-  warn "Edit .env and set real JWT_SECRET + JWT_REFRESH_SECRET before a production deploy."
-  cp backend/.env.example .env
+# ── Backend environment guard ──────────────────────────────────────────────
+# docker-compose.yml passes this exact file to the backend container.
+if [[ ! -f "backend/.env" ]]; then
+  warn "No backend/.env file found."
+  warn "Creating it from backend/.env.example."
+  warn "Edit backend/.env and set a real JWT_SECRET before a production deploy."
+  cp backend/.env.example backend/.env
 fi
 
 # ── Parse arguments ────────────────────────────────────────────────────────
@@ -159,9 +160,8 @@ echo -e "  ${BOLD}Health check:${RESET}  ${CYAN}http://localhost:4000/health${RE
 echo ""
 echo -e "  ${BOLD}Demo pages:${RESET}"
 echo -e "    Dispute resolution  →  ${CYAN}http://localhost:5173/demo/dispute${RESET}"
-echo -e "    MFA fatigue attack  →  ${CYAN}http://localhost:5173/demo/mfa-fatigue${RESET}"
-echo -e "    Phishing clone      →  ${CYAN}http://localhost:5173/demo/phishing${RESET}"
-echo -e "    Replay attack       →  ${CYAN}http://localhost:5173/demo/replay${RESET}"
+echo -e "    Attack simulation   →  ${CYAN}http://localhost:5173/demo/attack${RESET}"
+echo -e "    Phishing clone      →  ${CYAN}http://localhost:5173/demo/phishing-clone${RESET}"
 echo ""
 echo -e "  To stop:  ${YELLOW}$COMPOSE_CMD down${RESET}"
 echo -e "  Logs:     ${YELLOW}$COMPOSE_CMD logs -f backend${RESET}"

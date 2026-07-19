@@ -1,11 +1,3 @@
-/**
- * Dashboard — production-quality implementation
- *
- * Sections:
- *   1. Active Sessions  — fetches GET /api/auth/sessions, allows revoke
- *   2. Pending Approvals — fetches GET /api/approval/requests/pending, allows vote
- *   3. Recent Activity  — fetches GET /api/auth/audit (hash-chained audit log)
- */
 import { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { authedGet, authedPost, authedDel, ApiError } from '../lib/apiClient';
@@ -42,6 +34,12 @@ interface AuditEntry {
   created_at: string;
 }
 
+interface SecurityStatus {
+  passkeyRegistered: boolean;
+  mfaEnabled: boolean;
+  currentAuthenticationMethod: string;
+}
+
 interface PolicyRow {
   id: string;
   name: string;
@@ -64,6 +62,25 @@ function parseUserAgent(ua: string | null): string {
   if (/Safari/.test(ua) && /Mac/.test(ua)) return 'Safari on macOS';
   if (/Edg/.test(ua)) return 'Microsoft Edge';
   return 'Browser';
+}
+
+function currentBrowser(ua: string | null): string {
+  if (!ua) return 'Not Available';
+  if (/Edg\//.test(ua)) return 'Microsoft Edge';
+  if (/Firefox\//.test(ua)) return 'Firefox';
+  if (/Chrome\//.test(ua)) return 'Google Chrome';
+  if (/Safari\//.test(ua)) return 'Safari';
+  return 'Not Available';
+}
+
+function currentPlatform(ua: string | null): string {
+  if (!ua) return 'Not Available';
+  if (/iPhone|iPad/.test(ua)) return 'iOS';
+  if (/Android/.test(ua)) return 'Android';
+  if (/Windows/.test(ua)) return 'Windows';
+  if (/Mac/.test(ua)) return 'macOS';
+  if (/Linux/.test(ua)) return 'Linux';
+  return 'Not Available';
 }
 
 function maskIp(ip: string | null): string {
@@ -152,6 +169,115 @@ function apiErrorMsg(err: unknown): string {
       : err.message;
   }
   return err instanceof Error ? err.message : 'An unexpected error occurred';
+}
+
+function trustDetails(activity: AuditEntry[]): { level: string; reason: string } {
+  const decision = activity.find((entry) => entry.entry_type === 'risk_decision');
+  const payload = decision?.payload;
+  const score = payload && typeof payload === 'object' && 'score' in payload
+    ? String((payload as Record<string, unknown>).score)
+    : null;
+  const reason = payload && typeof payload === 'object' && 'reason' in payload
+    ? String((payload as Record<string, unknown>).reason)
+    : null;
+
+  if (!score) return { level: 'Not Available', reason: 'No recorded trust decision is available yet.' };
+
+  const explanations: Record<string, string> = {
+    known_ip: 'Known IP address detected.',
+    new_ip: 'New IP detected; the browser matches recent sign-in history.',
+    known_device_pattern: 'A recognized device pattern was detected.',
+    no_history: 'No prior sign-in history was available for this decision.',
+  };
+  return { level: score.charAt(0).toUpperCase() + score.slice(1), reason: explanations[reason ?? ''] ?? 'A trust decision was recorded.' };
+}
+
+function securityEventLabel(entry: AuditEntry): string {
+  if (entry.entry_type === 'login') return 'Login';
+  if (entry.entry_type === 'webauthn.registered') return 'Passkey Registration';
+  if (entry.entry_type === 'totp.enabled') return 'MFA Enabled';
+  if (entry.entry_type === 'vote') return 'Approval Submitted';
+  if (entry.entry_type === 'request_resolved') {
+    const payload = entry.payload;
+    const status = payload && typeof payload === 'object' && 'status' in payload
+      ? String((payload as Record<string, unknown>).status)
+      : '';
+    return status === 'approved' ? 'Approval Approved' : 'Approval Resolved';
+  }
+  if (entry.entry_type === 'receipt_generated') return 'Receipt Generated';
+  return auditLabel(entry.entry_type);
+}
+
+function SecurityIndicator({ label, enabled }: { label: string; enabled: boolean }) {
+  return (
+    <div className="flex items-center justify-between gap-3 py-2 text-sm">
+      <span className="text-ink-secondary">{label}</span>
+      <span className={enabled ? 'badge-success' : 'badge-danger'}>{enabled ? '✓ Yes' : '✕ No'}</span>
+    </div>
+  );
+}
+
+function SecurityDashboard({
+  status,
+  sessions,
+  activity,
+  loading,
+}: {
+  status: LoadState<SecurityStatus>;
+  sessions: LoadState<Session[]>;
+  activity: LoadState<AuditEntry[]>;
+  loading: boolean;
+}) {
+  const latestSession = sessions.status === 'ok' ? sessions.data[0] : undefined;
+  const trust = activity.status === 'ok' ? trustDetails(activity.data) : { level: 'Not Available', reason: 'Security activity is not available.' };
+  const events = activity.status === 'ok'
+    ? activity.data.filter((entry) => ['login', 'webauthn.registered', 'totp.enabled', 'vote', 'request_resolved', 'receipt_generated'].includes(entry.entry_type)).slice(0, 5)
+    : [];
+
+  return (
+    <section aria-labelledby="security-dashboard-heading">
+      <div className="mb-3 flex items-center gap-2">
+        <h2 id="security-dashboard-heading" className="text-sm font-semibold text-ink-primary">Security Dashboard</h2>
+        <span className="badge-accent">Read-only</span>
+      </div>
+      <div className="grid gap-4 lg:grid-cols-2">
+        <article className="card">
+          <div className="card-header"><h3 className="text-sm font-semibold">Authentication Status</h3></div>
+          <div className="card-body divide-y divide-border">
+            {loading ? <SectionSkeleton rows={3} /> : status.status === 'ok' ? <>
+              <SecurityIndicator label="Passkey Registered" enabled={status.data.passkeyRegistered} />
+              <SecurityIndicator label="MFA Enabled" enabled={status.data.mfaEnabled} />
+              <div className="flex items-center justify-between gap-3 py-2 text-sm"><span className="text-ink-secondary">Current Authentication Method</span><span className="font-medium text-ink-primary">{status.data.currentAuthenticationMethod}</span></div>
+            </> : <p className="text-sm text-ink-muted">Not Available</p>}
+          </div>
+        </article>
+        <article className="card">
+          <div className="card-header"><h3 className="text-sm font-semibold">Session Information</h3></div>
+          <dl className="grid grid-cols-2 gap-x-4 gap-y-4 card-body text-sm">
+            <div><dt className="text-2xs font-medium uppercase tracking-wider text-ink-muted">Active Sessions</dt><dd className="mt-1 font-medium text-ink-primary">{sessions.status === 'ok' ? sessions.data.length : 'Not Available'}</dd></div>
+            <div><dt className="text-2xs font-medium uppercase tracking-wider text-ink-muted">Session Expiry</dt><dd className="mt-1 font-medium text-ink-primary">{latestSession ? new Date(latestSession.expires_at).toLocaleString() : 'Not Available'}</dd></div>
+            <div><dt className="text-2xs font-medium uppercase tracking-wider text-ink-muted">Last Login</dt><dd className="mt-1 font-medium text-ink-primary">{latestSession?.last_seen ? relativeTime(latestSession.last_seen) : 'Not Available'}</dd></div>
+            <div><dt className="text-2xs font-medium uppercase tracking-wider text-ink-muted">Current Browser</dt><dd className="mt-1 font-medium text-ink-primary">{currentBrowser(latestSession?.user_agent ?? null)}</dd></div>
+            <div><dt className="text-2xs font-medium uppercase tracking-wider text-ink-muted">Current Platform</dt><dd className="mt-1 font-medium text-ink-primary">{currentPlatform(latestSession?.user_agent ?? null)}</dd></div>
+          </dl>
+        </article>
+        <article className="card">
+          <div className="card-header"><h3 className="text-sm font-semibold">Trust Information</h3></div>
+          <div className="card-body">
+            <p className="text-2xs font-medium uppercase tracking-wider text-ink-muted">Current Trust Score</p>
+            <p className="mt-1 text-lg font-semibold text-ink-primary">Not Available</p>
+            <p className="mt-4 text-2xs font-medium uppercase tracking-wider text-ink-muted">Trust Level</p>
+            <p className="mt-1 text-sm font-medium text-ink-primary">{trust.level}</p>
+            <p className="mt-2 text-xs leading-5 text-ink-secondary">{trust.reason}</p>
+          </div>
+        </article>
+        <article className="card">
+          <div className="card-header"><h3 className="text-sm font-semibold">Recent Security Activity</h3></div>
+          {loading ? <SectionSkeleton rows={3} /> : events.length ? <div className="divide-y divide-border">{events.map((event) => <div key={event.id} className="flex items-center justify-between gap-3 px-5 py-3 sm:px-6"><div className="min-w-0"><p className="text-sm font-medium text-ink-primary">{securityEventLabel(event)}</p><p className="mt-0.5 text-xs text-ink-muted">{relativeTime(event.created_at)}</p></div><span className="badge-neutral">Recorded</span></div>)}</div> : <p className="card-body text-sm text-ink-muted">Not Available</p>}
+        </article>
+      </div>
+    </section>
+  );
 }
 
 // ── Skeleton ──────────────────────────────────────────────────────────────
@@ -388,9 +514,11 @@ export default function DashboardPage() {
   const [sessions, setSessions]     = useState<LoadState<Session[]>>({ status: 'loading' });
   const [approvals, setApprovals]   = useState<LoadState<ApprovalRequest[]>>({ status: 'loading' });
   const [activity, setActivity]     = useState<LoadState<AuditEntry[]>>({ status: 'loading' });
+  const [securityStatus, setSecurityStatus] = useState<LoadState<SecurityStatus>>({ status: 'loading' });
   const [revokingId, setRevokingId] = useState<string | null>(null);
   const [votingId, setVotingId]     = useState<string | null>(null);
   const [demoStatus, setDemoStatus] = useState<{ type: 'idle' | 'loading' | 'success' | 'error'; message?: string }>({ type: 'idle' });
+  const [actionError, setActionError] = useState<string | null>(null);
 
   // ── Data fetchers ────────────────────────────────────────────────────────
 
@@ -427,12 +555,24 @@ export default function DashboardPage() {
     }
   }, [token]);
 
+  const loadSecurityStatus = useCallback(async () => {
+    if (!token) { setSecurityStatus({ status: 'error', message: 'Not authenticated' }); return; }
+    setSecurityStatus({ status: 'loading' });
+    try {
+      const data = await authedGet<SecurityStatus>('/api/auth/security-status', token);
+      setSecurityStatus({ status: 'ok', data });
+    } catch (err) {
+      setSecurityStatus({ status: 'error', message: apiErrorMsg(err) });
+    }
+  }, [token]);
+
   useEffect(() => {
     if (!token) { navigate('/login'); return; }
     loadSessions();
     loadApprovals();
     loadActivity();
-  }, [token, navigate, loadSessions, loadApprovals, loadActivity]);
+    loadSecurityStatus();
+  }, [token, navigate, loadSessions, loadApprovals, loadActivity, loadSecurityStatus]);
 
   // ── Session revocation ──────────────────────────────────────────────────
 
@@ -448,9 +588,10 @@ export default function DashboardPage() {
           : prev
       );
     } catch (err) {
-      // Re-fetch to get accurate state
       void loadSessions();
-      alert(apiErrorMsg(err));
+      const msg = apiErrorMsg(err);
+      setActionError(msg);
+      setTimeout(() => setActionError(null), 4000);
     } finally {
       setRevokingId(null);
     }
@@ -471,7 +612,9 @@ export default function DashboardPage() {
       );
       void loadActivity();
     } catch (err) {
-      alert(apiErrorMsg(err));
+      const msg = apiErrorMsg(err);
+      setActionError(msg);
+      setTimeout(() => setActionError(null), 4000);
     } finally {
       setVotingId(null);
     }
@@ -569,6 +712,22 @@ export default function DashboardPage() {
           <h1 className="text-xl font-semibold tracking-tight text-ink-primary">Overview</h1>
           <p className="text-sm text-ink-secondary">Monitor account activity, evaluate trust continuously, and respond to security events.</p>
         </div>
+
+        {actionError && (
+          <div role="alert" className="flex items-start gap-2.5 rounded-xl border border-danger-border bg-danger-muted px-4 py-3 text-sm text-danger">
+            <svg className="mt-0.5 h-4 w-4 shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+              <path fillRule="evenodd" d="M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0zm-7 4a1 1 0 1 1-2 0 1 1 0 0 1 2 0zm-1-9a1 1 0 0 0-1 1v4a1 1 0 1 0 2 0V6a1 1 0 0 0-1-1z" clipRule="evenodd"/>
+            </svg>
+            {actionError}
+          </div>
+        )}
+
+        <SecurityDashboard
+          status={securityStatus}
+          sessions={sessions}
+          activity={activity}
+          loading={securityStatus.status === 'loading' || sessions.status === 'loading' || activity.status === 'loading'}
+        />
 
         <section aria-label="Account overview" className="overflow-hidden rounded-xl border border-border bg-surface-elevated shadow-xs">
           <div className="grid divide-y divide-border sm:grid-cols-3 sm:divide-x sm:divide-y-0">

@@ -1,16 +1,12 @@
-/**
- * M7.2 — Risk scoring heuristic
- * M7.4 — Risk decision audit logging
- * M8.2 — In-memory step-up rate limiter for MFA fatigue detection
- *
- * Scoring rules:
- *   high   — no login history at all
- *   medium — IP is new, user-agent matches history
- *   low    — otherwise
- *
- * Rate limiter: >3 step-up attempts within 60 s → blocked (429).
- * Uses an in-memory Map (resets on server restart).
- */
+// Risk scoring heuristic and in-memory step-up rate limiter.
+//
+// Scoring rules:
+//   high   — no login history
+//   medium — IP is new, user-agent matches history
+//   low    — otherwise
+//
+// Rate limiter: >3 step-up attempts within 60 s → blocked (429).
+// Uses an in-memory Map (resets on server restart).
 import pool from '../db/pool';
 import { appendAuditEntry } from './audit.service';
 import logger from '../lib/logger';
